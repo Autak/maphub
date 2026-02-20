@@ -1,0 +1,235 @@
+import { Router, Response } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
+import { Resend } from 'resend';
+import pool from '../db.js';
+import { config } from '../config.js';
+import { AuthRequest, authMiddleware } from '../middleware/auth.js';
+
+const router = Router();
+
+const COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
+const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
+
+/** Map a DB user row to the API response shape */
+function mapUser(u: any) {
+    return {
+        id: u.id,
+        username: u.username,
+        email: u.email,
+        bio: u.bio || '',
+        avatarUrl: u.avatar_url || '',
+        color: u.color,
+        joinedAt: new Date(u.created_at).getTime(),
+        bookmarks: [],
+    };
+}
+
+// ───── REGISTER ─────
+router.post('/register', async (req, res) => {
+    try {
+        const { username, email, password } = req.body;
+
+        if (!username || !email || !password) {
+            return res.status(400).json({ error: 'All fields are required' });
+        }
+        if (username.length < 2) {
+            return res.status(400).json({ error: 'Username must be at least 2 characters' });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        const existing = await pool.query(
+            'SELECT id FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($2)',
+            [email, username]
+        );
+        if (existing.rows.length > 0) {
+            return res.status(409).json({ error: 'Email or username already taken' });
+        }
+
+        const passwordHash = await bcrypt.hash(password, 12);
+        const color = randomColor();
+        const result = await pool.query(
+            'INSERT INTO users (username, email, password_hash, color) VALUES ($1, $2, $3, $4) RETURNING id',
+            [username, email.toLowerCase(), passwordHash, color]
+        );
+        const userId = result.rows[0].id;
+
+        // Create verification token
+        const token = uuidv4();
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await pool.query(
+            'INSERT INTO verification_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
+            [userId, token, expiresAt]
+        );
+
+        // Send verification email via Resend
+        const verifyUrl = `http://localhost:${config.port}/api/auth/verify/${token}`;
+        let autoVerified = false;
+
+        try {
+            if (config.resendApiKey && config.resendApiKey !== 're_YOUR_API_KEY_HERE') {
+                const resend = new Resend(config.resendApiKey);
+                await resend.emails.send({
+                    from: 'TerraTales <onboarding@resend.dev>',
+                    to: email,
+                    subject: 'Verify your TerraTales account',
+                    html: `
+                        <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+                            <h1 style="font-size: 24px; color: #1e293b;">Welcome to TerraTales!</h1>
+                            <p style="color: #64748b; line-height: 1.6;">
+                                Hi <strong>${username}</strong>, thanks for signing up. Click the button below to verify your email.
+                            </p>
+                            <a href="${verifyUrl}" style="display: inline-block; background: #1e293b; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">
+                                Verify Email
+                            </a>
+                            <p style="color: #94a3b8; font-size: 13px; margin-top: 24px;">
+                                This link expires in 24 hours.
+                            </p>
+                        </div>
+                    `,
+                });
+            } else {
+                console.log(`⚠️  No Resend key — auto-verifying ${username}`);
+                await pool.query('UPDATE users SET verified = TRUE WHERE id = $1', [userId]);
+                autoVerified = true;
+            }
+        } catch (emailErr) {
+            console.error('Failed to send verification email:', emailErr);
+        }
+
+        res.status(201).json({
+            message: autoVerified
+                ? 'Account created and auto-verified (dev mode)'
+                : 'Account created! Check your email to verify.',
+            autoVerified,
+        });
+    } catch (err) {
+        console.error('Register error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ───── VERIFY EMAIL ─────
+router.get('/verify/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const result = await pool.query(
+            'SELECT * FROM verification_tokens WHERE token = $1 AND expires_at > NOW()',
+            [token]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(400).send(`
+                <html><body style="font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
+                    <div style="text-align: center;">
+                        <h1 style="color: #ef4444;">Invalid or Expired Link</h1>
+                        <p style="color: #64748b;">This verification link is no longer valid.</p>
+                    </div>
+                </body></html>
+            `);
+        }
+
+        const { user_id } = result.rows[0];
+        await pool.query('UPDATE users SET verified = TRUE WHERE id = $1', [user_id]);
+        await pool.query('DELETE FROM verification_tokens WHERE user_id = $1', [user_id]);
+
+        res.send(`
+            <html><body style="font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
+                <div style="text-align: center;">
+                    <h1 style="color: #10b981;">Email Verified!</h1>
+                    <p style="color: #64748b;">Your account is now active. You can log in.</p>
+                    <a href="${config.frontendUrl}" style="display: inline-block; background: #1e293b; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 16px;">Go to TerraTales</a>
+                </div>
+            </body></html>
+        `);
+    } catch (err) {
+        console.error('Verify error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ───── LOGIN ─────
+router.post('/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        const result = await pool.query(
+            'SELECT * FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1)',
+            [email]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const user = result.rows[0];
+        const validPassword = await bcrypt.compare(password, user.password_hash);
+        if (!validPassword) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        if (!user.verified) {
+            return res.status(403).json({ error: 'Please verify your email before logging in' });
+        }
+
+        const token = jwt.sign({ userId: user.id }, config.jwtSecret, { expiresIn: '7d' });
+        res.json({ token, user: mapUser(user) });
+    } catch (err) {
+        console.error('Login error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ───── GET CURRENT USER ─────
+router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+        const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.userId]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        res.json(mapUser(result.rows[0]));
+    } catch (err) {
+        console.error('Me error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ───── UPDATE PROFILE ─────
+router.put('/profile', authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+        const { username, bio, avatarUrl } = req.body;
+        const updates: string[] = [];
+        const values: any[] = [];
+        let idx = 1;
+
+        if (username !== undefined) { updates.push(`username = $${idx++}`); values.push(username); }
+        if (bio !== undefined) { updates.push(`bio = $${idx++}`); values.push(bio); }
+        if (avatarUrl !== undefined) { updates.push(`avatar_url = $${idx++}`); values.push(avatarUrl); }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'Nothing to update' });
+        }
+
+        values.push(req.userId);
+        const result = await pool.query(
+            `UPDATE users SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
+            values
+        );
+
+        res.json(mapUser(result.rows[0]));
+    } catch (err: any) {
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'Username already taken' });
+        }
+        console.error('Profile update error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+export default router;

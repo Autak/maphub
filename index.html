@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrailThread — Share Your Hiking Adventures</title>
+  <meta name="description"
+    content="TrailThread is a trip-sharing platform for hikers. Create trips, map memories with photos, and explore adventures from around the globe." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <style>
+    html,
+    body,
+    #root {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    .leaflet-container {
+      height: 100%;
+      width: 100%;
+      z-index: 0;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    /* Animations — floating centered elements (toasts, banners) */
+    @keyframes fadeInFloat {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -20px);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+    }
+
+    .animate-fade-in-down {
+      animation: fadeInFloat 0.5s ease-out forwards;
+    }
+
+    /* Animations — full-page overlays (Explore, Profile, TripDetail) */
+    @keyframes fadeInPage {
+      0% {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-page-in {
+      animation: fadeInPage 0.35s ease-out forwards;
+    }
+
+    /* Hide scrollbar utility */
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+    }
+
+    .scrollbar-hide {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>

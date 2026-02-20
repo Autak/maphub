@@ -1,0 +1,7 @@
+{
+  "name": "TrailThread",
+  "description": "An interactive terrain journal where you can pin locations, upload photos, and use AI to generate fun captions for your adventures.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
