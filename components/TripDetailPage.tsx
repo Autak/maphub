@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Trip, MapLocation, User } from '../types';
 import { DIFFICULTY_LEVELS, LOCATION_TYPES } from '../constants';
 import { computeTripStats, getRouteCenter } from '../utils/tripStats';
-import { ArrowLeft, Heart, MapPin, Calendar, Mountain, Route, Camera, Bookmark, Edit2, Check, X, Trash2, Upload, FileUp, Globe, Plus, Minus, Tag } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
+import { ArrowLeft, Heart, MapPin, Calendar, Mountain, Route, Camera, Bookmark, Edit2, Check, X, Trash2, Upload, FileUp, Globe, Plus, Minus, Tag, Map as MapIcon } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import PhotoLightbox from './PhotoLightbox';
@@ -11,6 +11,72 @@ import WeatherWidget from './WeatherWidget';
 import PackingChecklist from './PackingChecklist';
 import { parseGPX } from '../utils/gpxParser';
 import { ALL_TAGS } from '../utils/packingRules';
+import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
+
+const AltitudeProfileWidget = ({ gpxData }: { gpxData: { lat: number; lng: number; ele?: number }[] }) => {
+    const elevations = gpxData.map(p => p.ele || 0).filter(e => e > 0);
+    if (elevations.length < 2) return null;
+    const minEle = Math.min(...elevations);
+    const maxEle = Math.max(...elevations);
+    const range = maxEle - minEle || 1;
+
+    let totalAscent = 0;
+    let totalDescent = 0;
+    for (let i = 1; i < elevations.length; i++) {
+        const diff = elevations[i] - elevations[i - 1];
+        if (diff > 0) totalAscent += diff;
+        else totalDescent += Math.abs(diff);
+    }
+
+    // Create an SVG polygon
+    const points = gpxData.map((p, i) => {
+        const x = (i / (gpxData.length - 1)) * 100;
+        const ele = p.ele || 0;
+        const y = 100 - (((ele - minEle) / range) * 100);
+        return `${x.toFixed(2)},${y.toFixed(2)}`;
+    });
+
+    // Add bottom corners to close polygon
+    const polygonPoints = `0,100 ${points.join(' ')} 100,100`;
+
+    return (
+        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 md:p-8 mt-6">
+            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mb-6 flex items-center gap-2">
+                <Mountain size={14} /> Elevation Profile
+            </h3>
+            <div className="relative h-32 w-full mt-4 flex items-end">
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+                    <defs>
+                        <linearGradient id="eleGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="rgba(59, 130, 246, 0.4)" />
+                            <stop offset="100%" stopColor="rgba(59, 130, 246, 0)" />
+                        </linearGradient>
+                    </defs>
+                    <polygon points={polygonPoints} fill="url(#eleGrad)" className="transition-all duration-1000" />
+                    <polyline points={points.join(' ')} fill="none" stroke="#3b82f6" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <div className="absolute top-0 left-0 text-[10px] font-bold text-white/40 -mt-4">{Math.round(maxEle)}m</div>
+                <div className="absolute bottom-0 left-0 text-[10px] font-bold text-white/40 mb-2">{Math.round(minEle)}m</div>
+            </div>
+            <div className="flex justify-between items-center mt-4 pt-4 border-t border-white/10">
+                <div className="text-center">
+                    <span className="block text-white text-lg font-black">{Math.round(maxEle)}m</span>
+                    <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Highest Pt</span>
+                </div>
+                <div className="text-center flex gap-4">
+                    <div>
+                        <span className="block text-emerald-400 text-lg font-black">+{Math.round(totalAscent)}m</span>
+                        <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Ascent</span>
+                    </div>
+                    <div>
+                        <span className="block text-red-400 text-lg font-black">-{Math.round(totalDescent)}m</span>
+                        <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Descent</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 interface MiniMapProps {
     center: { lat: number; lng: number };
@@ -25,30 +91,27 @@ const MiniMap: React.FC<MiniMapProps> = ({ center, routePositions, gpxPositions,
     const tileUrl = `https://api.mapy.com/v1/maptiles/outdoor/256/{z}/{x}/{y}?apikey=${apiKey}`;
 
     return (
-        <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm h-56 w-full relative z-0">
+        <div className="w-full h-full relative z-0 bg-[#050505]">
             <MapContainer
                 center={[center.lat, center.lng]}
-                zoom={8}
+                zoom={10}
                 scrollWheelZoom={true}
                 dragging={true}
                 zoomControl={true}
                 attributionControl={false}
                 className="h-full w-full"
             >
-                <TileLayer
-                    attribution='&copy; <a href="https://www.seznam.cz/" target="_blank">Seznam.cz, a.s.</a>, &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
-                    url={tileUrl}
-                />
+                <TileLayer url={tileUrl} />
                 {gpxPositions.length > 1 && (
                     <Polyline
                         positions={gpxPositions}
-                        pathOptions={{ color: '#16a34a', weight: 4, opacity: 0.9 }}
+                        pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.8 }}
                     />
                 )}
                 {routePositions.length > 1 && (
                     <Polyline
                         positions={routePositions}
-                        pathOptions={{ color: authorColor, weight: 3, opacity: 0.7 }}
+                        pathOptions={{ color: authorColor, weight: 3, opacity: 0.7, dashArray: '5, 10' }}
                     />
                 )}
                 {tripLocations.map((loc) => (
@@ -57,23 +120,34 @@ const MiniMap: React.FC<MiniMapProps> = ({ center, routePositions, gpxPositions,
                         position={[loc.coords.lat, loc.coords.lng]}
                         icon={L.divIcon({
                             className: 'custom-div-icon',
-                            html: `<div style="background-color: #3b82f6; border: 2px solid white; border-radius: 50%; width: 10px; height: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>`,
-                            iconSize: [10, 10],
-                            iconAnchor: [5, 5],
+                            html: `<div style="background-color: white; border: 3px solid ${authorColor}; border-radius: 50%; width: 14px; height: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);"></div>`,
+                            iconSize: [14, 14],
+                            iconAnchor: [7, 7],
                         })}
-                    />
+                    >
+                        <Popup className="custom-popup" closeButton={false}>
+                            <div className="w-48 overflow-hidden rounded-xl bg-black/90 text-white border border-white/10 shadow-2xl backdrop-blur-xl -ml-1">
+                                {loc.photoUrl && (
+                                    <div className="h-32 w-full">
+                                        <img src={loc.photoUrl} alt={loc.title} className="w-full h-full object-cover" />
+                                    </div>
+                                )}
+                                <div className="p-3 font-sans">
+                                    <h4 className="font-bold text-sm mb-1 truncate text-white">{loc.title}</h4>
+                                    <p className="text-xs text-white/60 line-clamp-2">{loc.comment}</p>
+                                </div>
+                            </div>
+                        </Popup>
+                    </Marker>
                 ))}
             </MapContainer>
         </div>
     );
 };
 
-
-
 interface TripDetailPageProps {
     trip: Trip;
     locations: MapLocation[];
-
     author: User;
     currentUser: User;
     onBack: () => void;
@@ -85,7 +159,6 @@ interface TripDetailPageProps {
     onDeleteLocation?: (locationId: string) => Promise<void>;
     onDeleteTrip?: (tripId: string) => Promise<void>;
 }
-
 
 const TripDetailPage: React.FC<TripDetailPageProps> = ({
     trip, locations, author, currentUser, onBack, onLike, onBookmark,
@@ -105,20 +178,20 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
     const [gpxUploading, setGpxUploading] = useState(false);
     const [editingTags, setEditingTags] = useState(false);
     const [editTags, setEditTags] = useState<string[]>(trip.tags || []);
-    // Initialize editing state with current values, defaulting to 0 to avoid undefined
     const [editDistance, setEditDistance] = useState(trip.gpxStats?.distanceKm || 0);
     const [editDays, setEditDays] = useState(trip.gpxStats?.estimatedDays || 0);
 
-
-    // Timeline Drag & Drop
     const [draggedLocationId, setDraggedLocationId] = useState<string | null>(null);
 
-    // External Links state
     const [newLinkLabel, setNewLinkLabel] = useState('');
     const [newLinkUrl, setNewLinkUrl] = useState('');
     const [externalLinks, setExternalLinks] = useState(trip.externalLinks || []);
 
     const gpxInputRef = useRef<HTMLInputElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { scrollY } = useScroll({ container: containerRef });
+    const yHero = useTransform(scrollY, [0, 500], [0, 150]);
+    const opacityHero = useTransform(scrollY, [0, 400], [1, 0]);
 
     const tripLocations = useMemo(
         () => locations.filter(l => l.tripId === trip.id).sort((a, b) => a.timestamp - b.timestamp),
@@ -129,7 +202,6 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
 
     const stats = useMemo(() => computeTripStats(tripLocations, trip.startDate, trip.endDate), [tripLocations, trip.startDate, trip.endDate]);
 
-    // Update local validation state when trip/stats changes
     useEffect(() => {
         if (trip.gpxStats) {
             setEditDistance(trip.gpxStats.distanceKm || 0);
@@ -139,24 +211,22 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
             setEditDays(stats.days || 0);
         }
     }, [trip.gpxStats, stats]);
+
     const center = useMemo(() => getRouteCenter(tripLocations), [tripLocations]);
     const isLiked = trip.likes?.includes(currentUser.id);
     const isBookmarked = currentUser.bookmarks?.includes(trip.id);
 
     const difficultyInfo = trip.difficulty ? DIFFICULTY_LEVELS.find(d => d.id === trip.difficulty) : null;
-    const coverUrl = trip.coverPhotoUrl || (tripLocations.length > 0 ? tripLocations[0].photoUrl : null);
+    const coverUrl = trip.coverPhotoUrl || (tripLocations.length > 0 ? tripLocations[0].photoUrl : 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b');
 
-    // Polyline positions for map (pins)
     const routePositions: [number, number][] = tripLocations
         .filter(l => l.coords && !isNaN(l.coords.lat) && !isNaN(l.coords.lng))
         .map(l => [l.coords.lat, l.coords.lng]);
 
-    // GPX track positions
     const gpxPositions: [number, number][] = (trip.gpxData || [])
         .filter(p => !isNaN(p.lat) && !isNaN(p.lng))
         .map(p => [p.lat, p.lng]);
 
-    // Compute map center: prefer GPX center if available
     const mapCenter = useMemo(() => {
         if (gpxPositions.length > 0) {
             const latSum = gpxPositions.reduce((s, p) => s + p[0], 0);
@@ -166,35 +236,23 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
         return center;
     }, [gpxPositions, center]);
 
-    // --- Timeline "Days" Logic ---
     const days = useMemo(() => {
         const start = new Date(trip.startDate);
         start.setHours(0, 0, 0, 0);
-
-        // If no end date, default to start date, effectively 1 day
         const end = trip.endDate ? new Date(trip.endDate) : new Date(trip.startDate);
         end.setHours(0, 0, 0, 0);
 
-        // Ideally, we want to show at least one day, or the range
-        // Provide a buffer if needed, but for now just the range
         const dayList = [];
         const current = new Date(start);
-
         let index = 0;
-        // Safety break after 365 days to prevent infinite loops if data is weird
         while (current <= end && dayList.length < 365) {
-            dayList.push({
-                index,
-                date: new Date(current),
-                label: `Day ${index + 1}`
-            });
+            dayList.push({ index, date: new Date(current), label: `Day ${index + 1}` });
             current.setDate(current.getDate() + 1);
             index++;
         }
         return dayList;
     }, [trip.startDate, trip.endDate]);
 
-    // Group locations by day
     const locationsByDay = useMemo(() => {
         const grouped: Record<number, MapLocation[]> = {};
         days.forEach(d => grouped[d.index] = []);
@@ -202,18 +260,12 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
         tripLocations.forEach(loc => {
             const locDate = new Date(loc.timestamp);
             locDate.setHours(0, 0, 0, 0);
-
             const tripStart = new Date(trip.startDate);
             tripStart.setHours(0, 0, 0, 0);
-
             const dayIndex = Math.round((locDate.getTime() - tripStart.getTime()) / (1000 * 60 * 60 * 24));
 
-            if (grouped[dayIndex]) {
-                grouped[dayIndex].push(loc);
-            } else {
-                // Fallback: put in Day 1 if before start, or last day if after?
-                // Or create a "overflow" bucket?
-                // For now, let's clamp to 0 or last index
+            if (grouped[dayIndex]) grouped[dayIndex].push(loc);
+            else {
                 if (dayIndex < 0 && grouped[0]) grouped[0].push(loc);
                 else if (dayIndex >= days.length && grouped[days.length - 1]) grouped[days.length - 1].push(loc);
             }
@@ -221,19 +273,13 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
         return grouped;
     }, [tripLocations, days, trip.startDate]);
 
-    // --- Edit handlers ---
-
     const saveTitle = async () => {
-        if (onUpdateTrip && editTitle.trim()) {
-            await onUpdateTrip(trip.id, { title: editTitle.trim() });
-        }
+        if (onUpdateTrip && editTitle.trim()) await onUpdateTrip(trip.id, { title: editTitle.trim() });
         setEditingTitle(false);
     };
 
     const saveDesc = async () => {
-        if (onUpdateTrip) {
-            await onUpdateTrip(trip.id, { description: editDesc });
-        }
+        if (onUpdateTrip) await onUpdateTrip(trip.id, { description: editDesc });
         setEditingDesc(false);
     };
 
@@ -246,11 +292,7 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
 
     const saveLocationEdit = async () => {
         if (onUpdateLocation && editingLocationId) {
-            await onUpdateLocation(editingLocationId, {
-                title: editLocTitle,
-                comment: editLocComment,
-                type: editLocType,
-            });
+            await onUpdateLocation(editingLocationId, { title: editLocTitle, comment: editLocComment, type: editLocType });
         }
         setEditingLocationId(null);
     };
@@ -261,46 +303,28 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
         try {
             const text = await e.target.files[0].text();
             const result = parseGPX(text);
-            if (result.points.length === 0) {
-                alert('No track points found in the GPX file.');
-                return;
-            }
+            if (result.points.length === 0) return alert('No track points found.');
             await onUpdateTrip(trip.id, {
                 gpxData: result.points,
                 gpxStats: { distanceKm: result.distanceKm, estimatedDays: result.estimatedDays }
             });
         } catch (err) {
-            console.error('GPX parsing failed:', err);
-            alert('Failed to parse GPX file.');
+            console.error('GPX parse failed:', err);
+            alert('Failed to parse GPX.');
         } finally {
             setGpxUploading(false);
             if (gpxInputRef.current) gpxInputRef.current.value = '';
         }
     };
 
-    const handleSaveRoute = async (points: { lat: number; lng: number; ele?: number }[]) => {
-        if (onUpdateTrip && points.length > 0) {
-            // Calculate mock stats for the manual route
-            const distance = points.length * 0.5; // Very rough estimate
-
-            await onUpdateTrip(trip.id, {
-                gpxData: points,
-                gpxStats: { distanceKm: distance, estimatedDays: 1 }
-            });
-        }
-    };
-
     const addExternalLink = async () => {
         if (!newLinkLabel.trim() || !newLinkUrl.trim() || !onUpdateTrip) return;
         let url = newLinkUrl.trim();
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-            url = 'https://' + url;
-        }
+        if (!url.startsWith('http')) url = 'https://' + url;
         const updatedLinks = [...externalLinks, { label: newLinkLabel.trim(), url }];
         const updated = await onUpdateTrip(trip.id, { externalLinks: updatedLinks });
         if (updated) setExternalLinks(updated.externalLinks || updatedLinks);
-        setNewLinkLabel('');
-        setNewLinkUrl('');
+        setNewLinkLabel(''); setNewLinkUrl('');
     };
 
     const removeLink = async (index: number) => {
@@ -311,15 +335,11 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
     };
 
     const handleUpdatePackingItems = async (items: string[]) => {
-        if (onUpdateTrip) {
-            await onUpdateTrip(trip.id, { packingItems: items });
-        }
+        if (onUpdateTrip) await onUpdateTrip(trip.id, { packingItems: items });
     };
 
     const handleSavePackList = async (items: string[]) => {
-        if (onUpdateTrip) {
-            await onUpdateTrip(trip.id, { packingList: items });
-        }
+        if (onUpdateTrip) await onUpdateTrip(trip.id, { packingList: items });
     };
 
     const toggleEditTag = (tag: string) => {
@@ -327,9 +347,7 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
     };
 
     const saveTags = async () => {
-        if (onUpdateTrip) {
-            await onUpdateTrip(trip.id, { tags: editTags });
-        }
+        if (onUpdateTrip) await onUpdateTrip(trip.id, { tags: editTags });
         setEditingTags(false);
     };
 
@@ -341,46 +359,34 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
             distanceKm: field === 'distance' ? numVal : editDistance,
             estimatedDays: field === 'days' ? numVal : editDays,
         };
-
         if (field === 'distance') setEditDistance(numVal);
         if (field === 'days') setEditDays(numVal);
-
-        if (onUpdateTrip) {
-            await onUpdateTrip(trip.id, { gpxStats: newStats });
-        }
+        if (onUpdateTrip) await onUpdateTrip(trip.id, { gpxStats: newStats });
     };
 
-    // Day Comments Handler
     const handleSaveDayComment = async (dayIndex: number, comment: string) => {
         if (!onUpdateTrip) return;
         const updatedComments = { ...trip.dayComments, [dayIndex]: comment };
         await onUpdateTrip(trip.id, { dayComments: updatedComments });
     };
 
-    // --- Timeline Handlers ---
-
     const handleAddDay = async () => {
         if (!onUpdateTrip) return;
-
         const currentEnd = trip.endDate ? new Date(trip.endDate) : new Date(trip.startDate);
         const newEnd = new Date(currentEnd);
         newEnd.setDate(newEnd.getDate() + 1);
-
         await onUpdateTrip(trip.id, { endDate: newEnd.getTime() });
     };
 
     const handleRemoveDay = async () => {
         if (!onUpdateTrip) return;
-
-        // Don't allow less than 1 day (startDate == endDate)
         if (trip.endDate && new Date(trip.endDate) <= new Date(trip.startDate)) return;
-        if (!trip.endDate) return; // Already 1 day
+        if (!trip.endDate) return;
 
         const currentEnd = new Date(trip.endDate);
         const newEnd = new Date(currentEnd);
         newEnd.setDate(newEnd.getDate() - 1);
 
-        // Safety check
         if (newEnd < new Date(trip.startDate)) {
             await onUpdateTrip(trip.id, { endDate: new Date(trip.startDate).getTime() });
         } else {
@@ -396,7 +402,7 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
 
     const handleDragOver = (e: React.DragEvent) => {
         if (!isEditable) return;
-        e.preventDefault(); // allow drop
+        e.preventDefault();
     };
 
     const handleDropOnDay = async (e: React.DragEvent, dayIndex: number) => {
@@ -404,625 +410,497 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
         e.preventDefault();
         const locId = e.dataTransfer.getData('locationId');
         if (!locId) return;
-
         setDraggedLocationId(null);
 
-        // Find the location
         const loc = locations.find(l => l.id === locId);
         if (!loc) return;
 
-        // Calculate new timestamp
-        // Keep the original time of day, but change the date to the target day
         const targetDay = days[dayIndex];
         const newDate = new Date(targetDay.date);
         const oldDate = new Date(loc.timestamp);
-
         newDate.setHours(oldDate.getHours(), oldDate.getMinutes(), oldDate.getSeconds());
 
         await onUpdateLocation(locId, { timestamp: newDate.getTime() });
     };
 
     return (
-        <div className="w-full h-full bg-slate-50 overflow-y-auto pb-24">
-            {/* Hero Section */}
-            <div className="relative h-80 md:h-96 bg-slate-800 overflow-hidden">
-                {coverUrl && (
-                    <img src={coverUrl} alt={trip.title} className="w-full h-full object-cover opacity-70" />
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-
-                {/* Back button */}
+        <div ref={containerRef} className="w-full h-full bg-[#050505] text-white overflow-y-auto overflow-x-hidden pb-32 font-sans relative">
+            {/* Nav / Floating Back Button */}
+            <div className="fixed top-6 left-6 z-[100]">
                 <button
                     onClick={onBack}
-                    className="absolute top-6 left-6 z-10 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-sm transition"
+                    className="w-12 h-12 rounded-full bg-white/10 hover:bg-white text-white hover:text-black flex items-center justify-center backdrop-blur-md transition-all border border-white/20 shadow-2xl"
                 >
                     <ArrowLeft size={20} />
                 </button>
+            </div>
 
-                {/* GPX Upload button (top-right, only when editable) */}
-                {isEditable && (
-                    <div className="absolute top-6 right-6 z-10">
-                        <button
-                            onClick={() => gpxInputRef.current?.click()}
-                            disabled={gpxUploading}
-                            className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white backdrop-blur-sm rounded-lg text-sm font-bold transition disabled:opacity-50"
-                        >
-                            <FileUp size={16} />
-                            {gpxUploading ? 'Uploading...' : trip.gpxData ? 'Replace GPX Track' : 'Upload GPX Track'}
-                        </button>
-                        <input
-                            ref={gpxInputRef}
-                            type="file"
-                            accept=".gpx"
-                            onChange={handleGPXUpload}
-                            className="hidden"
-                        />
-                    </div>
-                )}
+            {/* Admin Header Actions */}
+            {isEditable && (
+                <div className="fixed top-6 right-6 z-[100] flex gap-3">
+                    <button
+                        onClick={() => gpxInputRef.current?.click()}
+                        disabled={gpxUploading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white text-white hover:text-black backdrop-blur-md rounded-full text-xs font-bold transition-all border border-white/20"
+                    >
+                        <FileUp size={14} />
+                        {gpxUploading ? 'Uploading...' : trip.gpxData ? 'Replace GPX' : 'Upload GPX'}
+                    </button>
+                    <input ref={gpxInputRef} type="file" accept=".gpx" onChange={handleGPXUpload} className="hidden" />
 
-                {/* Delete Trip Button (top-right, below GPX upload) */}
-                {isEditable && onDeleteTrip && (
-                    <div className="absolute top-20 right-6 z-10">
+                    {onDeleteTrip && (
                         <button
                             onClick={() => {
                                 if (window.confirm('Are you sure you want to delete this trip? This action cannot be undone.')) {
                                     onDeleteTrip(trip.id).then(onBack);
                                 }
                             }}
-                            className="flex items-center gap-2 px-4 py-2 bg-red-500/80 hover:bg-red-600/90 text-white backdrop-blur-sm rounded-lg text-sm font-bold transition shadow-lg"
+                            className="w-10 h-10 flex items-center justify-center bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white backdrop-blur-md rounded-full text-xs font-bold transition-all border border-red-500/30"
                         >
                             <Trash2 size={16} />
-                            Delete Trip
                         </button>
-                    </div>
-                )}
+                    )}
+                </div>
+            )}
 
-                {/* Hero info */}
-                <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8">
-                    <div className="flex items-center gap-2 mb-3 flex-wrap">
-                        {isEditable ? (
-                            <>
-                                <select
-                                    value={trip.difficulty || ''}
-                                    onChange={(e) => onUpdateTrip?.(trip.id, { difficulty: e.target.value })}
-                                    className="bg-white/20 backdrop-blur-sm text-white text-xs font-bold px-3 py-1 rounded-full border border-white/30 outline-none cursor-pointer hover:bg-white/30 transition appearance-none [&>option]:text-slate-900"
-                                >
-                                    <option value="" disabled>Select Difficulty</option>
-                                    {DIFFICULTY_LEVELS.map(d => (
-                                        <option key={d.id} value={d.id}>{d.label}</option>
-                                    ))}
-                                </select>
+            {/* Hero Parallax Section */}
+            <div className="relative h-[80vh] min-h-[600px] w-full overflow-hidden">
+                <motion.div
+                    style={{ y: yHero, opacity: opacityHero }}
+                    className="absolute inset-0 w-full h-[120%]"
+                >
+                    <img src={coverUrl} alt={trip.title} className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent" />
+                </motion.div>
 
-                                <select
-                                    value={trip.visibility}
-                                    onChange={(e) => onUpdateTrip?.(trip.id, { visibility: e.target.value })}
-                                    className="bg-white/20 backdrop-blur-sm text-white text-xs font-bold px-3 py-1 rounded-full border border-white/30 outline-none cursor-pointer hover:bg-white/30 transition appearance-none [&>option]:text-slate-900"
-                                >
-                                    <option value="public">Public</option>
-                                    <option value="private">Private</option>
-                                    <option value="friends">Friends Only</option>
-                                </select>
-                            </>
-                        ) : (
-                            difficultyInfo && (
-                                <span className={`${difficultyInfo.color} text-white text-xs font-bold px-3 py-1 rounded-full`}>
-                                    {difficultyInfo.icon} {difficultyInfo.label}
-                                </span>
-                            )
-                        )}
+                <div className="absolute inset-x-0 bottom-0 p-8 md:p-16 flex flex-col justify-end z-10">
+                    <div className="max-w-screen-2xl mx-auto w-full">
+                        {/* Editor specific top bars */}
+                        <div className="flex items-center gap-3 mb-6 flex-wrap">
+                            {isEditable ? (
+                                <>
+                                    <select
+                                        value={trip.difficulty || ''}
+                                        onChange={(e) => onUpdateTrip?.(trip.id, { difficulty: e.target.value })}
+                                        className="bg-white/10 backdrop-blur-md text-white border border-white/20 text-xs font-bold px-4 py-2 rounded-full outline-none focus:bg-white focus:text-black transition-all appearance-none"
+                                    >
+                                        <option value="" disabled>Select Difficulty</option>
+                                        {DIFFICULTY_LEVELS.map(d => (
+                                            <option key={d.id} value={d.id} className="text-black">{d.label}</option>
+                                        ))}
+                                    </select>
 
-                        {isEditable && editingTags ? (
-                            <div className="flex flex-col gap-2 bg-slate-900/50 backdrop-blur p-3 rounded-xl border border-white/10 w-full md:w-auto">
-                                <p className="text-xs text-white/70 font-bold uppercase">Select Categories:</p>
-                                <div className="flex flex-wrap gap-2">
-                                    {ALL_TAGS.map(tag => (
-                                        <button
-                                            key={tag}
-                                            onClick={() => toggleEditTag(tag)}
-                                            className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase transition ${editTags.includes(tag)
-                                                ? 'bg-blue-500 text-white shadow-lg scale-105'
-                                                : 'bg-white/10 text-slate-300 hover:bg-white/20'
-                                                }`}
-                                        >
-                                            {tag}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div className="flex justify-end gap-2 mt-2">
-                                    <button onClick={() => { setEditingTags(false); setEditTags(trip.tags || []); }} className="px-3 py-1 bg-white/10 text-white rounded text-xs hover:bg-white/20">Cancel</button>
-                                    <button onClick={saveTags} className="px-3 py-1 bg-green-500 text-white rounded text-xs font-bold hover:bg-green-600">Save Tags</button>
-                                </div>
-                            </div>
-                        ) : (
-                            <>
-                                {trip.tags?.map(tag => (
-                                    <span key={tag} className="bg-white/20 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-tighter">
-                                        {tag}
+                                    <select
+                                        value={trip.visibility}
+                                        onChange={(e) => onUpdateTrip?.(trip.id, { visibility: e.target.value })}
+                                        className="bg-white/10 backdrop-blur-md text-white border border-white/20 text-xs font-bold px-4 py-2 rounded-full outline-none focus:bg-white focus:text-black transition-all appearance-none"
+                                    >
+                                        <option value="public" className="text-black">Public</option>
+                                        <option value="private" className="text-black">Private</option>
+                                    </select>
+                                </>
+                            ) : (
+                                difficultyInfo && (
+                                    <span className={`bg-white/10 border border-white/20 text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-full backdrop-blur-md flex items-center gap-2`}>
+                                        {difficultyInfo.icon} {difficultyInfo.label}
                                     </span>
-                                ))}
-                                {isEditable && (
+                                )
+                            )}
+
+                            {isEditable ? (
+                                editingTags ? (
+                                    <div className="flex items-center gap-2 bg-white/10 border border-white/20 px-4 py-2 rounded-full backdrop-blur-md">
+                                        <Tag size={12} className="text-white/50" />
+                                        <div className="flex flex-wrap gap-2">
+                                            {editTags.map(tag => (
+                                                <span key={tag} className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-white bg-white/20 px-2 py-0.5 rounded-sm">
+                                                    {tag} <button onClick={() => toggleEditTag(tag)} className="hover:text-red-400"><X size={10} /></button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <input
+                                            type="text"
+                                            placeholder="Add tag..."
+                                            className="bg-transparent text-[10px] font-bold text-white outline-none w-20 uppercase tracking-widest placeholder:text-white/30"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && e.currentTarget.value) {
+                                                    toggleEditTag(e.currentTarget.value.trim());
+                                                    e.currentTarget.value = '';
+                                                }
+                                            }}
+                                        />
+                                        <button onClick={saveTags} className="ml-2 hover:text-green-400 text-white"><Check size={14} /></button>
+                                    </div>
+                                ) : (
                                     <button
                                         onClick={() => { setEditingTags(true); setEditTags(trip.tags || []); }}
-                                        className="bg-white/10 hover:bg-white/20 text-white/70 hover:text-white px-2 py-1 rounded-full transition flex items-center gap-1"
+                                        className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-full transition flex items-center gap-2"
                                     >
-                                        <Tag size={10} /> <span className="text-[10px] font-bold">Edit</span>
+                                        <Tag size={12} /> <span className="text-[10px] font-black uppercase tracking-widest">Edit Tags</span>
+                                    </button>
+                                )
+                            ) : (
+                                trip.tags?.map(tag => (
+                                    <span key={tag} className="bg-white/10 border border-white/20 backdrop-blur-md text-white text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest">
+                                        {tag}
+                                    </span>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Title Editing */}
+                        {isEditable && editingTitle ? (
+                            <div className="flex items-center gap-4 mb-6">
+                                <input
+                                    value={editTitle}
+                                    onChange={e => setEditTitle(e.target.value)}
+                                    className="text-5xl md:text-7xl lg:text-8xl font-black text-white bg-transparent border-b-2 border-white/30 focus:border-white outline-none w-full max-w-4xl"
+                                    autoFocus
+                                    onKeyDown={e => e.key === 'Enter' && saveTitle()}
+                                />
+                                <button onClick={saveTitle} className="p-4 bg-white text-black rounded-full hover:scale-105 transition"><Check size={24} /></button>
+                                <button onClick={() => { setEditingTitle(false); setEditTitle(trip.title); }} className="p-4 bg-white/10 border border-white/20 text-white rounded-full hover:bg-white/20 transition"><X size={24} /></button>
+                            </div>
+                        ) : (
+                            <div className="group relative w-fit mb-6">
+                                <h1 className="text-5xl md:text-7xl lg:text-[7rem] leading-[0.9] font-black text-white tracking-tighter drop-shadow-2xl">
+                                    {trip.title}
+                                </h1>
+                                {isEditable && (
+                                    <button onClick={() => setEditingTitle(true)} className="absolute -top-4 -right-12 p-3 bg-white/10 border border-white/20 backdrop-blur text-white rounded-full hover:bg-white transition opacity-0 group-hover:opacity-100 hover:text-black">
+                                        <Edit2 size={16} />
                                     </button>
                                 )}
-                            </>
+                            </div>
                         )}
-                    </div>
 
-                    {/* Editable title */}
-                    {isEditable && editingTitle ? (
-                        <div className="flex items-center gap-2 mb-2">
-                            <input
-                                value={editTitle}
-                                onChange={e => setEditTitle(e.target.value)}
-                                className="text-3xl md:text-4xl font-black text-white bg-white/20 backdrop-blur px-3 py-1 rounded-lg outline-none w-full"
-                                autoFocus
-                                onKeyDown={e => e.key === 'Enter' && saveTitle()}
-                            />
-                            <button onClick={saveTitle} className="p-2 bg-green-500 text-white rounded-full"><Check size={16} /></button>
-                            <button onClick={() => { setEditingTitle(false); setEditTitle(trip.title); }} className="p-2 bg-red-500 text-white rounded-full"><X size={16} /></button>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-3 mb-2">
-                            <h1 className="text-3xl md:text-4xl font-black text-white drop-shadow-lg">{trip.title}</h1>
-                            {isEditable && (
-                                <button onClick={() => setEditingTitle(true)} className="p-1.5 bg-white/20 text-white rounded-full hover:bg-white/30 transition">
-                                    <Edit2 size={14} />
-                                </button>
-                            )}
-                        </div>
-                    )}
-
-                    <div className="flex items-center gap-3 text-white/80 text-sm">
-                        <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm border-2 border-white/50"
-                            style={{ backgroundColor: author.color }}
-                        >
-                            {author.avatarUrl ? (
-                                <img src={author.avatarUrl} alt={author.username} className="w-full h-full rounded-full object-cover" />
+                        <div className="flex items-center gap-6 text-white/50 text-sm font-medium">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full overflow-hidden border border-white/20 bg-white/10 backdrop-blur flex items-center justify-center">
+                                    {author.avatarUrl ? (
+                                        <img src={author.avatarUrl} alt={author.username} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <span className="text-[10px] text-white font-bold">{author.username.substring(0, 2).toUpperCase()}</span>
+                                    )}
+                                </div>
+                                <span className="font-bold text-white uppercase tracking-widest text-[10px]">{author.username}</span>
+                            </div>
+                            <div className="w-1 h-1 rounded-full bg-white/30" />
+                            {isEditable ? (
+                                <div className="flex items-center gap-2 bg-white/10 border border-white/20 px-3 py-1.5 rounded-full backdrop-blur-md">
+                                    <Calendar size={14} className="text-white/50" />
+                                    <input
+                                        type="date"
+                                        value={new Date(trip.startDate).toISOString().split('T')[0]}
+                                        onChange={async (e) => {
+                                            if (!onUpdateTrip) return;
+                                            const newDate = new Date(e.target.value);
+                                            await onUpdateTrip(trip.id, { startDate: newDate.getTime() });
+                                        }}
+                                        className="bg-transparent text-[10px] font-bold text-white uppercase tracking-widest outline-none [&::-webkit-calendar-picker-indicator]:invert"
+                                    />
+                                </div>
                             ) : (
-                                author.username.substring(0, 2).toUpperCase()
+                                <span className="flex items-center gap-2 uppercase tracking-widest text-[10px] font-bold text-white/80">
+                                    <Calendar size={14} />
+                                    {new Date(trip.startDate).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                                </span>
                             )}
                         </div>
-                        <span className="font-medium">{author.username}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                            <Calendar size={14} />
-                            {new Date(trip.startDate).toLocaleDateString()}
-                            {trip.endDate && ` — ${new Date(trip.endDate).toLocaleDateString()}`}
-                        </span>
                     </div>
                 </div>
             </div>
 
-            {/* Content */}
-            <div className="max-w-5xl mx-auto px-4 md:px-8 -mt-4 relative z-10">
+            {/* Split Layout Container */}
+            <div className="max-w-screen-2xl mx-auto w-full px-6 md:px-16 grid grid-cols-1 lg:grid-cols-12 gap-12 mt-12">
 
-                {/* Stats & Actions Bar */}
-                <div className="bg-white rounded-2xl shadow-lg p-5 mb-8 border border-slate-100">
-                    <div className="flex items-center justify-between flex-wrap gap-4">
-                        {/* Stats */}
-                        <div className="flex items-center gap-6 flex-wrap">
-                            <div className="text-center group relative">
+                {/* Left Column: Content & Timeline */}
+                <div className="lg:col-span-6 xl:col-span-5 space-y-16 pb-32">
+
+                    {/* Floating Action Bar */}
+                    <div className="flex items-center justify-between p-6 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-xl sticky top-6 z-40 shadow-2xl">
+                        <div className="flex gap-8">
+                            <div className="group relative">
                                 {isEditable ? (
                                     <input
                                         type="number"
                                         value={editDistance}
                                         onChange={(e) => setEditDistance(parseFloat(e.target.value))}
                                         onBlur={(e) => handleStatChange('distance', e.target.value)}
-                                        className="block text-xl font-black text-slate-800 w-24 text-center bg-slate-50 border border-slate-200 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                        className="block text-2xl font-black text-white w-28 bg-transparent border-b border-white/20 focus:border-white outline-none"
                                     />
                                 ) : (
-                                    <span className="block text-xl font-black text-slate-800">{trip.gpxStats?.distanceKm || stats.distance}</span>
+                                    <span className="block text-3xl font-black text-white">{trip.gpxStats?.distanceKm || stats.distance}</span>
                                 )}
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">KM</span>
-                                {isEditable && <Edit2 size={10} className="absolute -top-1 -right-2 text-slate-300 opacity-0 group-hover:opacity-100" />}
+                                <span className="text-[9px] font-bold text-white/40 uppercase tracking-[0.2em] mt-1 block">Kilometers</span>
                             </div>
-                            <div className="w-px h-8 bg-slate-200" />
-                            <div className="text-center group relative">
+
+                            <div className="group relative">
                                 {isEditable ? (
                                     <input
                                         type="number"
                                         value={editDays}
                                         onChange={(e) => setEditDays(parseFloat(e.target.value))}
                                         onBlur={(e) => handleStatChange('days', e.target.value)}
-                                        className="block text-xl font-black text-slate-800 w-16 text-center bg-slate-50 border border-slate-200 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                        className="block text-2xl font-black text-white w-20 bg-transparent border-b border-white/20 focus:border-white outline-none"
                                     />
                                 ) : (
-                                    <span className="block text-xl font-black text-slate-800">{trip.gpxStats?.estimatedDays || stats.days}</span>
+                                    <span className="block text-3xl font-black text-white">{trip.gpxStats?.estimatedDays || stats.days}</span>
                                 )}
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{(trip.gpxStats?.estimatedDays || stats.days) === 1 ? 'Day' : 'Days'}</span>
-                                {isEditable && <Edit2 size={10} className="absolute -top-1 -right-2 text-slate-300 opacity-0 group-hover:opacity-100" />}
+                                <span className="text-[9px] font-bold text-white/40 uppercase tracking-[0.2em] mt-1 block">Days</span>
                             </div>
-
-                            {stats.summits > 0 && (
-                                <>
-                                    <div className="w-px h-8 bg-slate-200" />
-                                    <div className="text-center">
-                                        <span className="block text-xl font-black text-slate-900">{stats.summits}</span>
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Summits</span>
-                                    </div>
-                                </>
-                            )}
                         </div>
 
-                        {/* Actions */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex gap-2">
                             <button
                                 onClick={() => onBookmark(trip.id)}
-                                className={`flex items-center gap-1.5 px-4 py-2 rounded-full font-bold text-sm transition border ${isBookmarked
-                                    ? 'bg-amber-50 text-amber-600 border-amber-200'
-                                    : 'bg-slate-100 text-slate-500 border-slate-200 hover:border-amber-300 hover:text-amber-500'
-                                    }`}
+                                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all border ${isBookmarked ? 'bg-white text-black border-white' : 'bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20'}`}
                             >
-                                <Bookmark size={16} fill={isBookmarked ? 'currentColor' : 'none'} />
-                                {isBookmarked ? 'Saved' : 'Save'}
+                                <Bookmark size={18} fill={isBookmarked ? 'currentColor' : 'none'} strokeWidth={isBookmarked ? 0 : 2} />
                             </button>
                             <button
                                 onClick={() => onLike(trip.id)}
-                                className={`flex items-center gap-1.5 px-4 py-2 rounded-full font-bold text-sm transition border ${isLiked
-                                    ? 'bg-red-50 text-red-500 border-red-200'
-                                    : 'bg-slate-100 text-slate-500 border-slate-200 hover:border-red-300 hover:text-red-400'
-                                    }`}
+                                className={`flex items-center gap-2 px-5 rounded-full font-bold text-sm transition-all border ${isLiked ? 'bg-red-500 border-red-500 text-white' : 'bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20'}`}
                             >
-                                <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
+                                <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} strokeWidth={isLiked ? 0 : 2} />
                                 {trip.likes?.length || 0}
                             </button>
                         </div>
                     </div>
-                </div>
 
-                {/* Description */}
-                <div className="bg-white rounded-2xl p-6 mb-8 border border-slate-100 shadow-sm">
-                    {isEditable && editingDesc ? (
-                        <div className="w-full">
-                            <textarea
-                                value={editDesc}
-                                onChange={e => setEditDesc(e.target.value)}
-                                className="w-full p-3 bg-slate-50 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 resize-none h-32"
-                            />
-                            <div className="flex gap-2 mt-2 justify-end">
-                                <button onClick={() => { setEditingDesc(false); setEditDesc(trip.description); }} className="px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 rounded-lg transition">Cancel</button>
-                                <button onClick={saveDesc} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-bold">Save</button>
+                    {/* Description Paragraph */}
+                    <div className="group relative">
+                        {isEditable && editingDesc ? (
+                            <div className="w-full">
+                                <textarea
+                                    value={editDesc}
+                                    onChange={e => setEditDesc(e.target.value)}
+                                    className="w-full p-6 bg-white/5 rounded-3xl border border-white/20 focus:border-white outline-none text-white text-lg resize-none h-48 backdrop-blur"
+                                />
+                                <div className="flex gap-3 mt-4">
+                                    <button onClick={saveDesc} className="px-6 py-2.5 bg-white text-black rounded-full font-bold text-sm hover:scale-105 transition-transform">Save Story</button>
+                                    <button onClick={() => { setEditingDesc(false); setEditDesc(trip.description); }} className="px-6 py-2.5 bg-white/10 border border-white/20 text-white rounded-full font-bold text-sm hover:bg-white/20 transition">Cancel</button>
+                                </div>
                             </div>
-                        </div>
-                    ) : (
-                        <div className="flex justify-between items-start gap-4">
-                            <p className="text-slate-700 leading-relaxed text-base">{trip.description}</p>
+                        ) : (
+                            <div className="relative">
+                                <p className="text-white/80 text-lg md:text-xl leading-relaxed font-light font-serif">
+                                    {trip.description}
+                                </p>
+                                {isEditable && (
+                                    <button onClick={() => setEditingDesc(true)} className="absolute -top-4 -right-12 p-3 bg-white/10 border border-white/20 backdrop-blur text-white rounded-full hover:bg-white transition opacity-0 group-hover:opacity-100 hover:text-black">
+                                        <Edit2 size={16} />
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* TIMELINE */}
+                    <div className="relative">
+                        <div className="flex items-center justify-between mb-10">
+                            <h2 className="text-2xl font-black text-white flex items-center gap-3 tracking-tighter">
+                                <Route size={24} className="text-white/40" />
+                                Journey Log
+                            </h2>
                             {isEditable && (
-                                <button onClick={() => setEditingDesc(true)} className="p-1.5 bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200 transition flex-shrink-0">
-                                    <Edit2 size={14} />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={handleRemoveDay} className="w-10 h-10 bg-white/5 border border-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition"><Minus size={16} /></button>
+                                    <button onClick={handleAddDay} className="w-10 h-10 bg-white/5 border border-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition"><Plus size={16} /></button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-12">
+                            {days.map((day) => {
+                                const dayLocations = locationsByDay[day.index] || [];
+                                return (
+                                    <div
+                                        key={day.index}
+                                        className="relative pl-10 border-l border-white/10 pb-8 last:pb-0"
+                                        onDragOver={handleDragOver}
+                                        onDrop={(e) => handleDropOnDay(e, day.index)}
+                                    >
+                                        {/* Day Node Marker */}
+                                        <div className="absolute left-[-5px] top-1 w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.8)]" />
+
+                                        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 mb-6 flex items-center gap-4">
+                                            <span className="text-white text-base">{day.label}</span>
+                                            <span className="h-px bg-white/10 flex-1" />
+                                            <span>{day.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                                        </h3>
+
+                                        <div className="space-y-6">
+                                            {dayLocations.map((loc, idx) => {
+                                                const typeDef = LOCATION_TYPES.find(t => t.id === loc.type);
+                                                const isEditingThis = editingLocationId === loc.id;
+                                                const isBeingDragged = draggedLocationId === loc.id;
+
+                                                return (
+                                                    <div
+                                                        key={loc.id}
+                                                        className={`relative transition-all duration-300 ${isBeingDragged ? 'opacity-30 scale-95' : 'opacity-100'}`}
+                                                        draggable={isEditable}
+                                                        onDragStart={(e) => handleDragStart(e, loc.id)}
+                                                    >
+                                                        {isEditingThis ? (
+                                                            <div className="bg-white/5 backdrop-blur rounded-2xl border border-white/20 p-6 space-y-4">
+                                                                <input value={editLocTitle} onChange={e => setEditLocTitle(e.target.value)} className="w-full font-bold text-xl text-white bg-transparent border-b border-white/20 focus:outline-none focus:border-white pb-2" placeholder="Waypoint Name" />
+                                                                <textarea value={editLocComment} onChange={e => setEditLocComment(e.target.value)} className="w-full text-base text-white/80 bg-black/20 border border-white/10 rounded-xl p-4 focus:ring-1 focus:ring-white focus:outline-none resize-none h-24" placeholder="Memory details..." />
+                                                                <select value={editLocType} onChange={e => setEditLocType(e.target.value)} className="text-xs border border-white/20 bg-black text-white rounded-lg px-3 py-2 focus:ring-1 focus:ring-white focus:outline-none appearance-none">
+                                                                    {LOCATION_TYPES.map(t => (<option key={t.id} value={t.id}>{t.label}</option>))}
+                                                                </select>
+                                                                <div className="flex gap-3 justify-end pt-2">
+                                                                    <button onClick={() => setEditingLocationId(null)} className="px-4 py-2 text-xs font-bold text-white/50 hover:bg-white/10 rounded-lg transition">Cancel</button>
+                                                                    <button onClick={saveLocationEdit} className="px-4 py-2 text-xs bg-white text-black rounded-lg hover:scale-105 transition font-bold">Save</button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="group/item flex gap-6 cursor-pointer" onClick={() => setLightboxIndex(locationIndexOf(loc))}>
+                                                                <div className="w-24 h-24 md:w-32 md:h-32 rounded-2xl overflow-hidden flex-shrink-0 bg-white/5 border border-white/10 relative">
+                                                                    <img src={loc.photoUrl} alt={loc.title} className="w-full h-full object-cover group-hover/item:scale-110 transition-transform duration-[2s] ease-out" />
+                                                                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/item:opacity-100 transition-opacity" />
+                                                                </div>
+                                                                <div className="flex-1 min-w-0 pt-2">
+                                                                    <div className="flex items-center gap-3 mb-2">
+                                                                        <h4 className="text-lg font-bold text-white truncate">{loc.title}</h4>
+                                                                    </div>
+                                                                    <p className="text-base text-white/60 font-light line-clamp-2 md:line-clamp-3 leading-relaxed">"{loc.comment}"</p>
+                                                                </div>
+
+                                                                {isEditable && (
+                                                                    <div className="absolute -left-4 top-4 flex flex-col gap-2 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                                                                        <button onClick={(e) => { e.stopPropagation(); startEditingLocation(loc); }} className="p-2 bg-white text-black rounded-full hover:scale-110 transition shadow-xl"><Edit2 size={12} /></button>
+                                                                        <button onClick={(e) => { e.stopPropagation(); onDeleteLocation && onDeleteLocation(loc.id); }} className="p-2 bg-red-500 text-white rounded-full hover:scale-110 transition shadow-xl"><Trash2 size={12} /></button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Day Comments / Log */}
+                                        <div className="mt-6">
+                                            {isEditable ? (
+                                                <div className="relative">
+                                                    <textarea
+                                                        placeholder="Add an editorial entry for this day..."
+                                                        className="w-full text-base text-white/80 bg-white/5 border border-white/10 rounded-2xl p-6 focus:border-white outline-none resize-none transition-all placeholder:text-white/20"
+                                                        rows={3}
+                                                        defaultValue={trip.dayComments?.[day.index] || ''}
+                                                        onBlur={(e) => handleSaveDayComment(day.index, e.target.value)}
+                                                    />
+                                                </div>
+                                            ) : (
+                                                (trip.dayComments?.[day.index]) && (
+                                                    <div className="pl-6 border-l-2 border-white/20 text-lg text-white/70 font-light font-serif leading-relaxed italic">
+                                                        "{trip.dayComments[day.index]}"
+                                                    </div>
+                                                )
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Altitude Profile */}
+                    {trip.gpxData && trip.gpxData.length > 0 && trip.gpxData.some(p => p.ele && p.ele > 0) && (
+                        <div className="pt-12">
+                            <AltitudeProfileWidget gpxData={trip.gpxData} />
+                        </div>
+                    )}
+
+                    {/* Resources & Packing */}
+                    {(externalLinks.length > 0 || isEditable || trip.tags?.length || trip.difficulty) && (
+                        <div className="flex flex-col gap-6 pt-12 border-t border-white/10">
+
+                            {(externalLinks.length > 0 || isEditable) && (
+                                <div className="bg-white/5 border border-white/10 rounded-3xl p-8">
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mb-6 flex items-center gap-2">
+                                        <Globe size={14} /> Waypoints
+                                    </h3>
+                                    <div className="flex flex-col gap-2">
+                                        {externalLinks.map((link, idx) => (
+                                            <div key={idx} className="flex items-center gap-3 group/link">
+                                                <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-white/5 text-white/80 hover:text-white text-sm font-medium transition-all">
+                                                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                                                        <Globe size={14} className="opacity-60" />
+                                                    </div>
+                                                    {link.label}
+                                                </a>
+                                                {isEditable && (
+                                                    <button onClick={() => removeLink(idx)} className="w-10 h-10 flex items-center justify-center text-white/40 hover:text-red-400 hover:bg-red-400/10 rounded-xl opacity-0 group-hover/link:opacity-100 transition"><Trash2 size={16} /></button>
+                                                )}
+                                            </div>
+                                        ))}
+                                        {isEditable && (
+                                            <div className="p-4 bg-white/5 rounded-2xl border border-white/10 mt-2 flex flex-col gap-3">
+                                                <input type="text" value={newLinkLabel} onChange={e => setNewLinkLabel(e.target.value)} placeholder="Label" className="w-full bg-transparent border-b border-white/20 px-2 py-2 text-sm text-white focus:outline-none focus:border-white transition-colors placeholder:text-white/30" />
+                                                <input type="text" value={newLinkUrl} onChange={e => setNewLinkUrl(e.target.value)} placeholder="URL (https://...)" className="w-full bg-transparent border-b border-white/20 px-2 py-2 text-sm text-white focus:outline-none focus:border-white transition-colors placeholder:text-white/30" />
+                                                <button onClick={addExternalLink} disabled={!newLinkLabel || !newLinkUrl} className="mt-2 py-2.5 bg-white hover:bg-white/90 text-black font-bold text-xs uppercase tracking-widest rounded-xl disabled:opacity-50 transition-colors">Add Link</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {(trip.tags?.length || trip.difficulty) && (
+                                <div className="bg-white/5 border border-white/10 rounded-3xl p-8">
+                                    <PackingChecklist
+                                        tags={trip.tags || []}
+                                        difficulty={trip.difficulty}
+                                        isEditable={isEditable}
+                                        customItems={trip.packingItems || []}
+                                        onUpdateCustomItems={isEditable ? handleUpdatePackingItems : undefined}
+                                        packingList={trip.packingList}
+                                        onSavePackList={isEditable ? handleSavePackList : undefined}
+                                    />
+                                </div>
                             )}
                         </div>
                     )}
                 </div>
 
-                {/* External Links */}
-                {(externalLinks.length > 0 || isEditable) && (
-                    <div className="bg-white rounded-2xl p-6 mb-8 border border-slate-100 shadow-sm">
-                        <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-                            <Globe size={16} className="text-blue-500" />
-                            Hike Resources
-                        </h3>
-
-                        <div className="flex flex-wrap gap-3 mb-4">
-                            {externalLinks.map((link, idx) => (
-                                <div key={idx} className="flex items-center gap-2 group/link">
-                                    <a
-                                        href={link.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-bold hover:bg-blue-100 transition shadow-sm"
-                                    >
-                                        <Globe size={14} />
-                                        {link.label}
-                                    </a>
-                                    {isEditable && (
-                                        <button
-                                            onClick={() => removeLink(idx)}
-                                            className="p-1 px-2 text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover/link:opacity-100 transition"
-                                        >
-                                            <Trash2 size={12} />
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-
-                        {isEditable && (
-                            <div className="flex gap-2 items-center pt-4 border-t border-slate-50">
-                                <input
-                                    type="text"
-                                    value={newLinkLabel}
-                                    onChange={e => setNewLinkLabel(e.target.value)}
-                                    placeholder="Label (e.g. Maps.cz)"
-                                    className="px-3 py-1.5 text-xs bg-slate-50 border rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-                                />
-                                <input
-                                    type="text"
-                                    value={newLinkUrl}
-                                    onChange={e => setNewLinkUrl(e.target.value)}
-                                    placeholder="https://..."
-                                    className="flex-1 px-3 py-1.5 text-xs bg-slate-50 border rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-                                />
-                                <button
-                                    onClick={addExternalLink}
-                                    disabled={!newLinkLabel.trim() || !newLinkUrl.trim()}
-                                    className="px-4 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-black transition disabled:opacity-50"
-                                >
-                                    Add Link
-                                </button>
+                {/* Right Column: Sticky Map */}
+                <div className="hidden lg:block lg:col-span-6 xl:col-span-7">
+                    <div className="sticky top-6 h-[calc(100vh-48px)] rounded-[2.5rem] overflow-hidden border border-white/10 shadow-2xl">
+                        {(tripLocations.length > 0 || gpxPositions.length > 0) && mapCenter ? (
+                            <MiniMap
+                                center={mapCenter}
+                                routePositions={routePositions}
+                                gpxPositions={gpxPositions}
+                                tripLocations={tripLocations}
+                                authorColor={author.color || "#000"}
+                            />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-white/5">
+                                <MapIcon size={48} className="text-white/20 mb-4" />
+                                <p className="text-white/40 text-sm">No map data available.</p>
                             </div>
                         )}
+
+                        {/* Weather overlay on map */}
+                        <div className="absolute top-6 right-6 z-[1000] drop-shadow-2xl">
+                            {mapCenter && <WeatherWidget coords={mapCenter} />}
+                        </div>
                     </div>
-                )}
-
-                {/* Weather + Mini Map row */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                    {/* Weather */}
-                    {mapCenter && <WeatherWidget coords={mapCenter} />}
-
-                    {/* Mini Map with GPX track overlay */}
-                    {(tripLocations.length > 0 || gpxPositions.length > 0) && mapCenter && (
-                        <MiniMap
-                            center={mapCenter}
-                            routePositions={routePositions}
-                            gpxPositions={gpxPositions}
-                            tripLocations={tripLocations}
-                            authorColor={author.color}
-                        />
-                    )}
                 </div>
 
-                {/* Trip Timeline (Day Based) */}
-                <div className="mb-8 relative">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                            <Route size={20} className="text-blue-600" />
-                            Journey Timeline
-                        </h2>
-                        {isEditable && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={handleRemoveDay}
-                                    title="Remove Day"
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-500 rounded-lg text-sm font-bold hover:bg-red-50 hover:text-red-500 transition"
-                                >
-                                    <Minus size={16} />
-                                </button>
-                                <button
-                                    onClick={handleAddDay}
-                                    title="Add Day"
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-100 transition"
-                                >
-                                    <Plus size={16} />
-                                    Add Day
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="space-y-6">
-                        {days.map((day) => {
-                            const dayLocations = locationsByDay[day.index] || [];
-
-                            return (
-                                <div
-                                    key={day.index}
-                                    className="relative pl-8 border-l-2 border-slate-100 pb-2 transition-all"
-                                    onDragOver={handleDragOver}
-                                    onDrop={(e) => handleDropOnDay(e, day.index)}
-                                >
-                                    {/* Day Marker */}
-                                    <div className="absolute left-[-9px] top-0 w-4 h-4 rounded-full bg-slate-300 border-2 border-white" />
-
-                                    <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4">
-                                        {day.label} <span className="text-slate-300 font-medium ml-2">{day.date.toLocaleDateString()}</span>
-                                    </h3>
-
-                                    {/* Empty State for Day */}
-                                    {dayLocations.length === 0 && (
-                                        <div className="p-4 border-2 border-dashed border-slate-100 rounded-xl text-center text-slate-400 text-xs italic mb-4">
-                                            No memories yet on this day.
-                                            {isEditable && <span className="block mt-1 font-bold text-slate-300">Drag items here!</span>}
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-4">
-                                        {dayLocations.map((loc, idx) => {
-                                            const typeDef = LOCATION_TYPES.find(t => t.id === loc.type);
-                                            const isEditingThis = editingLocationId === loc.id;
-                                            const isBeingDragged = draggedLocationId === loc.id;
-
-                                            return (
-                                                <div
-                                                    key={loc.id}
-                                                    className={`
-                                                        relative transition-all 
-                                                        ${isBeingDragged ? 'opacity-50 scale-95' : 'opacity-100'}
-                                                    `}
-                                                    draggable={isEditable}
-                                                    onDragStart={(e) => handleDragStart(e, loc.id)}
-                                                >
-                                                    {isEditingThis ? (
-                                                        /* Inline editing mode */
-                                                        <div className="bg-white rounded-xl border-2 border-blue-200 shadow-md p-4 space-y-3">
-                                                            <input
-                                                                value={editLocTitle}
-                                                                onChange={e => setEditLocTitle(e.target.value)}
-                                                                className="w-full font-bold text-slate-800 border-b border-blue-300 focus:outline-none focus:border-blue-500 pb-1"
-                                                                placeholder="Title"
-                                                            />
-                                                            <textarea
-                                                                value={editLocComment}
-                                                                onChange={e => setEditLocComment(e.target.value)}
-                                                                className="w-full text-sm text-slate-600 border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none h-16"
-                                                                placeholder="Comment..."
-                                                            />
-                                                            <select
-                                                                value={editLocType}
-                                                                onChange={e => setEditLocType(e.target.value)}
-                                                                className="text-xs border rounded-lg px-2 py-1.5 text-slate-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                                                            >
-                                                                {LOCATION_TYPES.map(t => (
-                                                                    <option key={t.id} value={t.id}>{t.icon} {t.label}</option>
-                                                                ))}
-                                                            </select>
-                                                            <div className="flex gap-2 justify-end">
-                                                                <button onClick={() => setEditingLocationId(null)} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg transition">Cancel</button>
-                                                                <button onClick={saveLocationEdit} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-bold">Save</button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        /* View mode */
-                                                        <div
-                                                            className={`
-                                                                bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden hover:shadow-md transition group/item relative
-                                                                ${isEditable ? 'cursor-grab active:cursor-grabbing' : ''}
-                                                            `}
-                                                        >
-                                                            <div className="flex gap-4 p-4 cursor-pointer" onClick={() => setLightboxIndex(locationIndexOf(loc))}>
-                                                                <div className="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 relative">
-                                                                    <img src={loc.photoUrl} alt={loc.title} className="w-full h-full object-cover group-hover/item:scale-105 transition-transform duration-300" />
-                                                                    <div className="absolute top-1 left-1 bg-white/90 backdrop-blur rounded px-1.5 py-0.5 text-[10px] font-bold text-slate-700 shadow-sm">
-                                                                        {new Date(loc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex items-center justify-between mb-1">
-                                                                        <h4 className="font-bold text-slate-800 truncate">{loc.title}</h4>
-                                                                    </div>
-                                                                    <p className="text-sm text-slate-500 italic line-clamp-2">"{loc.comment}"</p>
-                                                                    <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
-                                                                        <MapPin size={10} />
-                                                                        <span>{loc.coords.lat.toFixed(4)}, {loc.coords.lng.toFixed(4)}</span>
-                                                                        <span className={`px-1.5 py-0.5 bg-slate-100 rounded font-medium ${typeDef ? '' : 'text-slate-500'}`}>
-                                                                            {typeDef?.icon} {typeDef?.label}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Edit/Delete buttons for editable mode */}
-                                                            {isEditable && (
-                                                                <button
-                                                                    className="absolute top-2 right-2 p-1 bg-white/50 hover:bg-white text-slate-500 rounded-full opacity-0 group-hover/item:opacity-100 transition z-10"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        startEditingLocation(loc);
-                                                                    }}
-                                                                >
-                                                                    <Edit2 size={12} />
-                                                                </button>
-                                                            )}
-                                                            {isEditable && (
-                                                                <button
-                                                                    className="absolute bottom-2 right-2 p-1 bg-white/50 hover:bg-red-50 text-slate-500 hover:text-red-500 rounded-full opacity-0 group-hover/item:opacity-100 transition z-10"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        onDeleteLocation && onDeleteLocation(loc.id);
-                                                                    }}
-                                                                >
-                                                                    <Trash2 size={12} />
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {/* Day Comment Section */}
-                                    <div className="mt-4 pt-4 border-t border-slate-50">
-                                        {isEditable ? (
-                                            <div className="relative">
-                                                <textarea
-                                                    placeholder="Add a summary or thoughts for this day..."
-                                                    className="w-full text-sm text-slate-600 bg-white border border-slate-200 rounded-lg p-3 focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none resize-none transition"
-                                                    rows={3}
-                                                    defaultValue={trip.dayComments?.[day.index] || ''}
-                                                    onBlur={(e) => handleSaveDayComment(day.index, e.target.value)}
-                                                />
-                                                <div className="absolute right-2 bottom-2 text-xs text-slate-400 font-medium">Auto-saves on blur</div>
-                                            </div>
-                                        ) : (
-                                            (trip.dayComments?.[day.index]) && (
-                                                <div className="bg-blue-50/50 rounded-xl p-4 text-sm text-slate-700 leading-relaxed italic border border-blue-100/50">
-                                                    "{trip.dayComments[day.index]}"
-                                                </div>
-                                            )
-                                        )}
-                                    </div>
-
-                                </div>
-                            );
-                        })}
-                    </div >
-
-                    {/* Photo Gallery Grid */}
-                    {
-                        tripLocations.length > 0 && (
-                            <div className="mb-8">
-                                <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                    <Camera size={20} className="text-blue-600" />
-                                    Photo Gallery
-                                </h2>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                    {tripLocations.map((loc, idx) => (
-                                        <div
-                                            key={loc.id}
-                                            className="aspect-square rounded-xl overflow-hidden cursor-pointer relative group"
-                                            onClick={() => setLightboxIndex(idx)}
-                                        >
-                                            <img src={loc.photoUrl} alt={loc.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                                                <div className="absolute bottom-2 left-2 right-2">
-                                                    <p className="text-white text-sm font-bold truncate">{loc.title}</p>
-                                                    <p className="text-white/70 text-xs italic truncate">"{loc.comment}"</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )
-                    }
-
-                    {/* Packing Checklist */}
-                    {
-                        (trip.tags?.length || trip.difficulty) && (
-                            <div className="mb-8">
-                                <PackingChecklist
-                                    tags={trip.tags || []}
-                                    difficulty={trip.difficulty}
-                                    isEditable={isEditable}
-                                    customItems={trip.packingItems || []}
-                                    onUpdateCustomItems={isEditable ? handleUpdatePackingItems : undefined}
-                                    packingList={trip.packingList}
-                                    onSavePackList={isEditable ? handleSavePackList : undefined}
-                                />
-                            </div>
-                        )
-                    }
-                </div >
-
-                {/* Photo Lightbox */}
-                {
-                    lightboxIndex !== null && (
-                        <PhotoLightbox
-                            photos={tripLocations}
-                            currentIndex={lightboxIndex}
-                            onClose={() => setLightboxIndex(null)}
-                            onNavigate={setLightboxIndex}
-                        />
-                    )
-                }
             </div>
+
+            {/* Photo Lightbox */}
+            {lightboxIndex !== null && (
+                <PhotoLightbox
+                    photos={tripLocations}
+                    currentIndex={lightboxIndex}
+                    onClose={() => setLightboxIndex(null)}
+                    onNavigate={setLightboxIndex}
+                />
+            )}
         </div>
     );
 };

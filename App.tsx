@@ -363,18 +363,23 @@ const App: React.FC = () => {
         {/* Floating Messages */}
         {activeTripId ? (
           !draftLocation && (
-            <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[800] bg-white/90 backdrop-blur-sm px-4 py-1.5 rounded-full shadow-lg border border-slate-200 pointer-events-auto animate-fade-in-down">
-              <p className="text-slate-700 font-medium text-xs flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                Active: <span className="font-bold text-slate-900">{trips.find(t => t.id === activeTripId)?.title}</span>
+            <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-[800] bg-white/5 backdrop-blur-xl px-5 py-2.5 rounded-full shadow-2xl border border-white/20 pointer-events-auto animate-fade-in-down">
+              <p className="text-white font-medium text-xs flex items-center gap-3">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></span>
+                </span>
+                Tracking: <span className="font-bold text-white tracking-wide">{trips.find(t => t.id === activeTripId)?.title}</span>
               </p>
             </div>
           )
         ) : (
-          <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[800] bg-slate-900/90 text-white backdrop-blur-sm px-6 py-3 rounded-full shadow-lg animate-fade-in-down cursor-pointer hover:bg-black transition pointer-events-auto" onClick={() => setShowTripModal(true)}>
-            <p className="font-medium flex items-center gap-2 text-sm">
-              <Plus size={16} />
-              Start a journey to add pins
+          <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-[800] bg-white text-black backdrop-blur-xl px-6 py-3 rounded-full shadow-2xl animate-fade-in-down cursor-pointer hover:scale-105 hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-all pointer-events-auto flex items-center gap-2" onClick={() => setShowTripModal(true)}>
+            <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center">
+              <Plus size={12} strokeWidth={3} />
+            </div>
+            <p className="font-bold text-sm tracking-wide">
+              Begin Expedition
             </p>
           </div>
         )}

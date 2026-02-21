@@ -3,7 +3,7 @@
  * JWT token is stored in localStorage and sent as a Bearer header.
  */
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = `http://${window.location.hostname}:3001/api`;
 
 function getToken(): string | null {
     return localStorage.getItem('token');

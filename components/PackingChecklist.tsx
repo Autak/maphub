@@ -136,68 +136,69 @@ const PackingChecklist: React.FC<PackingChecklistProps> = ({
     // EDIT MODE RENDER
     if (isEditingList) {
         return (
-            <div className="bg-white rounded-2xl border border-blue-200 shadow-lg overflow-hidden ring-4 ring-blue-50/50">
-                <div className="p-4 border-b border-blue-100 bg-blue-50 flex items-center justify-between sticky top-0 z-10">
-                    <h3 className="font-bold text-blue-900 flex items-center gap-2">
-                        <Edit2 size={18} /> Customize Checklist
+            <div className="bg-white/5 rounded-[2rem] border border-white/20 shadow-2xl overflow-hidden backdrop-blur-xl">
+                <div className="p-6 border-b border-white/10 flex items-center justify-between sticky top-0 z-10 bg-black/40 backdrop-blur-md">
+                    <h3 className="font-bold text-white flex items-center gap-2 text-sm tracking-wide">
+                        <Edit2 size={16} /> Customize Arsenal
                     </h3>
-                    <div className="flex gap-2">
+                    <div className="flex gap-3">
                         <button
                             onClick={() => setIsEditingList(false)}
-                            className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-white rounded-lg transition"
+                            className="px-4 py-2 text-xs font-bold text-white/50 hover:text-white transition uppercase tracking-widest"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={saveEditing}
-                            className="px-4 py-1.5 text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition flex items-center gap-1.5 shadow-sm"
+                            className="px-5 py-2 text-xs font-bold bg-white text-black hover:bg-white/90 rounded-full transition flex items-center gap-2 shadow-lg uppercase tracking-widest"
                         >
-                            <Save size={14} /> Save Changes
+                            <Save size={14} /> Update
                         </button>
                     </div>
                 </div>
 
-                <div className="p-4 bg-slate-50 border-b border-slate-100">
-                    <div className="flex gap-2">
+                <div className="p-6 bg-black/20 border-b border-white/10">
+                    <div className="flex gap-3">
                         <input
                             type="text"
                             value={newItem}
                             onChange={e => setNewItem(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && addDraftCustomItem()}
-                            placeholder="Add new item..."
-                            className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                            placeholder="Add new equipment..."
+                            className="flex-1 px-4 py-3 text-sm border border-white/10 rounded-xl focus:border-white focus:outline-none bg-white/5 text-white placeholder:text-white/30 transition"
                         />
                         <button
                             onClick={addDraftCustomItem}
                             disabled={!newItem.trim()}
-                            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-bold text-sm flex items-center gap-1 disabled:opacity-50"
+                            className="px-4 py-3 bg-white text-black rounded-xl hover:bg-white/90 transition font-bold text-sm flex items-center justify-center disabled:opacity-50"
                         >
-                            <Plus size={14} />
+                            <Plus size={16} />
                         </button>
                     </div>
                 </div>
 
-                <div className="max-h-[60vh] overflow-y-auto divide-y divide-slate-100">
+                <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-2">
                     {/* Render Master Groups */}
                     {masterGroups.map(group => {
                         const CategoryIcon = CATEGORY_ICONS[group.category] || Package;
                         return (
                             <div key={group.category} className="p-4">
-                                <h4 className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2 flex items-center gap-1.5">
-                                    <CategoryIcon size={13} /> {group.categoryLabel}
+                                <h4 className="text-[10px] font-bold uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2">
+                                    <CategoryIcon size={12} /> {group.categoryLabel}
                                 </h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <div className="grid grid-cols-1 gap-2">
                                     {group.items.map(item => {
                                         const isSelected = draftList.includes(item.name);
                                         return (
-                                            <label key={item.name} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition ${isSelected ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100 hover:border-blue-200'}`}>
+                                            <label key={item.name} className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${isSelected ? 'bg-white/10 border-white/30' : 'bg-white/5 border-white/10 hover:border-white/20'}`}>
                                                 <input
                                                     type="checkbox"
                                                     checked={isSelected}
                                                     onChange={() => toggleDraftItem(item.name)}
-                                                    className="rounded text-blue-600 focus:ring-blue-500"
+                                                    className="w-5 h-5 rounded-md border text-blue-500 focus:ring-0 bg-transparent flex-shrink-0"
+                                                    style={{ borderColor: "rgba(255,255,255,0.3)" }}
                                                 />
-                                                <span className={`text-sm ${isSelected ? 'font-medium text-blue-900' : 'text-slate-600'}`}>{item.name}</span>
+                                                <span className={`text-sm font-medium ${isSelected ? 'text-white' : 'text-white/70'}`}>{item.name}</span>
                                             </label>
                                         )
                                     })}
@@ -216,19 +217,20 @@ const PackingChecklist: React.FC<PackingChecklistProps> = ({
 
                         return (
                             <div className="p-4">
-                                <h4 className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2 flex items-center gap-1.5">
-                                    <User size={13} /> Custom / Added
+                                <h4 className="text-[10px] font-bold uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2">
+                                    <User size={12} /> Custom Additions
                                 </h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <div className="grid grid-cols-1 gap-2">
                                     {customOnly.map(name => (
-                                        <label key={name} className="flex items-center gap-2 p-2 rounded-lg border border-blue-200 bg-blue-50 cursor-pointer">
+                                        <label key={name} className="flex items-center gap-3 p-3 rounded-2xl border border-white/30 bg-white/10 cursor-pointer">
                                             <input
                                                 type="checkbox"
                                                 checked={true}
                                                 onChange={() => toggleDraftItem(name)}
-                                                className="rounded text-blue-600 focus:ring-blue-500"
+                                                className="w-5 h-5 rounded-md border text-blue-500 focus:ring-0 bg-transparent flex-shrink-0"
+                                                style={{ borderColor: "rgba(255,255,255,0.3)" }}
                                             />
-                                            <span className="text-sm font-medium text-blue-900">{name}</span>
+                                            <span className="text-sm font-medium text-white">{name}</span>
                                         </label>
                                     ))}
                                 </div>
@@ -255,31 +257,30 @@ const PackingChecklist: React.FC<PackingChecklistProps> = ({
     };
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="bg-transparent overflow-hidden">
             {/* Header with progress */}
-            <div className="p-5 border-b border-slate-100">
-                <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                        <Package size={18} className="text-slate-500" />
-                        Packing Checklist
+            <div className="p-0 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 flex items-center gap-2">
+                        <Package size={14} /> Essentials
                     </h3>
                     <div className="flex items-center gap-3">
                         {isEditable && onSavePackList && (
                             <button
                                 onClick={startEditing}
-                                className="text-xs font-bold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition flex items-center gap-1"
+                                className="text-[10px] font-bold text-white/60 hover:text-white uppercase tracking-widest px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition flex items-center gap-1.5 border border-white/10"
                             >
                                 <Edit2 size={12} /> Customize
                             </button>
                         )}
-                        <span className={`text-sm font-bold ${progress === 100 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                        <span className={`text-xs font-bold tracking-widest ${progress === 100 ? 'text-emerald-400' : 'text-white/40'}`}>
                             {checkedCount}/{totalItems}
                         </span>
                     </div>
                 </div>
-                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/10">
                     <div
-                        className={`h-full rounded-full transition-all duration-500 ${progress === 100 ? 'bg-emerald-500' : progress > 50 ? 'bg-blue-500' : 'bg-amber-400'
+                        className={`h-full rounded-full transition-all duration-500 ${progress === 100 ? 'bg-emerald-400' : progress > 50 ? 'bg-blue-400' : 'bg-white/40'
                             }`}
                         style={{ width: `${progress}%` }}
                     />
@@ -287,33 +288,33 @@ const PackingChecklist: React.FC<PackingChecklistProps> = ({
             </div>
 
             {/* Categories */}
-            <div className="divide-y divide-slate-50">
+            <div className="space-y-6">
                 {displayGroups.map(group => {
                     const CategoryIcon = CATEGORY_ICONS[group.category] || Package;
                     return (
-                        <div key={group.category} className="p-4">
-                            <h4 className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2 flex items-center gap-1.5">
-                                <CategoryIcon size={13} className="text-slate-400" /> {group.label}
+                        <div key={group.category} className="">
+                            <h4 className="text-[10px] font-bold uppercase text-white/30 tracking-widest mb-3 flex items-center gap-2">
+                                <CategoryIcon size={12} /> {group.label}
                             </h4>
-                            <div className="space-y-1">
+                            <div className="space-y-2">
                                 {group.items.map(name => {
                                     const isChecked = checked.has(name);
                                     return (
-                                        <div key={name} className="flex items-center gap-1">
+                                        <div key={name} className="flex items-center gap-1 group/item">
                                             <button
                                                 onClick={() => toggle(name)}
-                                                className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-left transition text-sm ${isChecked
-                                                    ? 'bg-emerald-50 text-emerald-700'
-                                                    : 'hover:bg-slate-50 text-slate-700'
+                                                className={`flex-1 flex items-center gap-4 px-4 py-3 rounded-2xl text-left transition-all text-sm font-medium ${isChecked
+                                                    ? 'bg-emerald-500/10 text-emerald-100'
+                                                    : 'hover:bg-white/5 text-white/80 hover:text-white'
                                                     }`}
                                             >
-                                                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${isChecked
+                                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${isChecked
                                                     ? 'bg-emerald-500 border-emerald-500'
-                                                    : 'border-slate-300'
+                                                    : 'border-white/10 group-hover/item:border-white/40'
                                                     }`}>
                                                     {isChecked && <Check size={12} className="text-white" />}
                                                 </div>
-                                                <span className={isChecked ? 'line-through opacity-60' : ''}>
+                                                <span className={isChecked ? 'line-through opacity-50' : ''}>
                                                     {name}
                                                 </span>
                                             </button>
@@ -327,10 +328,10 @@ const PackingChecklist: React.FC<PackingChecklistProps> = ({
             </div>
 
             {activeItems.length === 0 && (
-                <div className="p-8 text-center text-slate-400 text-sm">
+                <div className="p-8 text-center text-white/30 text-sm">
                     <p>No items in checklist.</p>
                     {isEditable && (
-                        <button onClick={startEditing} className="text-blue-600 font-bold mt-2 hover:underline">Start adding items</button>
+                        <button onClick={startEditing} className="text-white/60 font-bold mt-2 hover:text-white transition uppercase text-[10px] tracking-widest">Start adding items</button>
                     )}
                 </div>
             )}
