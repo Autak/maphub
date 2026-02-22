@@ -120,7 +120,13 @@ const ExploreFeed: React.FC<ExploreFeedProps> = ({ trips, locations, users, curr
           </div>
 
           {/* Tags (Horizontal Scroll) */}
-          <div className="flex-1 overflow-x-auto scrollbar-hide py-1 flex items-center gap-2">
+          <div className="flex-1 overflow-x-auto scrollbar-hide py-1 flex items-center gap-2 pr-6">
+            <button
+              onClick={() => setSelectedTag(null)}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${selectedTag === null ? 'bg-white text-black' : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white border border-white/5'}`}
+            >
+              ALL
+            </button>
             {TRIP_TAGS.map(tag => (
               <button
                 key={tag}
@@ -130,6 +136,8 @@ const ExploreFeed: React.FC<ExploreFeedProps> = ({ trips, locations, users, curr
                 {tag}
               </button>
             ))}
+            {/* Added spacer to ensure last item is fully visible when scrolled */}
+            <div className="flex-shrink-0 w-2 md:w-6"></div>
           </div>
         </div>
 

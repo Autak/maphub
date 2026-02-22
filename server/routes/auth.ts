@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 import pool from '../db.js';
 import { AuthRequest, authMiddleware } from '../middleware/auth.js';
 
@@ -10,6 +10,17 @@ const router = Router();
 
 const COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
 const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
+
+// Configure Nodemailer transporter for Brevo SMTP
+const transporter = nodemailer.createTransport({
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false, // true for 465, false for other ports
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS, // This is your Brevo SMTP key
+    },
+});
 
 // ───── REGISTER ─────
 router.post('/register', async (req, res) => {
@@ -28,11 +39,32 @@ router.post('/register', async (req, res) => {
 
         // Check existing
         const existing = await pool.query(
-            'SELECT id FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($2)',
+            'SELECT * FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($2)',
             [email, username]
         );
+
         if (existing.rows.length > 0) {
-            return res.status(409).json({ error: 'Email or username already taken' });
+            let hasVerifiedConflict = false;
+            const unverifiedIds: string[] = [];
+
+            for (const row of existing.rows) {
+                if (row.verified) {
+                    hasVerifiedConflict = true;
+                } else {
+                    unverifiedIds.push(row.id);
+                }
+            }
+
+            if (hasVerifiedConflict) {
+                return res.status(409).json({ error: 'Email or username already taken' });
+            }
+
+            // Clean up old unverified accounts so the user can re-register using the same credentials
+            if (unverifiedIds.length > 0) {
+                for (const unverifiedId of unverifiedIds) {
+                    await pool.query('DELETE FROM users WHERE id = $1', [unverifiedId]);
+                }
+            }
         }
 
         // Hash password & insert user
@@ -52,16 +84,15 @@ router.post('/register', async (req, res) => {
             [userId, token, expiresAt]
         );
 
-        // Send verification email via Resend
+        // Send verification email via Brevo SMTP
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
         const verifyUrl = `http://localhost:${process.env.PORT || 3001}/api/auth/verify/${token}`;
 
         try {
-            const resendKey = process.env.RESEND_API_KEY;
-            if (resendKey && resendKey !== 're_YOUR_API_KEY_HERE') {
-                const resend = new Resend(resendKey);
-                await resend.emails.send({
-                    from: 'TrailThread <onboarding@resend.dev>',
+            const hasSmtpConfig = process.env.SMTP_USER && process.env.SMTP_PASS && process.env.SMTP_USER !== 'your-email@gmail.com';
+            if (hasSmtpConfig) {
+                await transporter.sendMail({
+                    from: `"TrailThread" <${process.env.SMTP_USER}>`,
                     to: email,
                     subject: 'Verify your TrailThread account',
                     html: `
@@ -80,8 +111,8 @@ router.post('/register', async (req, res) => {
           `,
                 });
             } else {
-                // No Resend key — auto-verify for development
-                console.log(`⚠️  No Resend API key — auto-verifying user ${username}`);
+                // No SMTP config — auto-verify for development
+                console.log(`⚠️  No SMTP configuration — auto-verifying user ${username}`);
                 console.log(`   Verification link would be: ${verifyUrl}`);
                 await pool.query('UPDATE users SET verified = TRUE WHERE id = $1', [userId]);
             }
@@ -90,7 +121,7 @@ router.post('/register', async (req, res) => {
             // Still continue — user can request re-send later
         }
 
-        const isAutoVerified = !process.env.RESEND_API_KEY || process.env.RESEND_API_KEY === 're_YOUR_API_KEY_HERE';
+        const isAutoVerified = !process.env.SMTP_USER || !process.env.SMTP_PASS || process.env.SMTP_USER === 'your-email@gmail.com';
 
         res.status(201).json({
             message: isAutoVerified
