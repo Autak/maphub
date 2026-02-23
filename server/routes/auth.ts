@@ -74,8 +74,9 @@ router.post('/register', async (req, res) => {
 
         try {
             // Send verification email via Brevo API
-            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-            const verifyUrl = `http://localhost:${process.env.PORT || 3001}/api/auth/verify/${token}`;
+            const protocol = req.protocol;
+            const host = req.get('host');
+            const verifyUrl = `${protocol}://${host}/api/auth/verify/${token}`;
             const senderEmail = process.env.SENDER_EMAIL || 'lukas@thetrailthread.com';
             const brevoApiKey = process.env.BREVO_API_KEY;
 
