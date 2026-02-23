@@ -34,6 +34,10 @@ app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-    console.log(`🚀 TrailThread API running on http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`🚀 TrailThread API running on http://localhost:${PORT}`);
+    });
+}
+
+export default app;

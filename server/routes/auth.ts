@@ -2,7 +2,6 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import nodemailer from 'nodemailer';
 import pool from '../db.js';
 import { AuthRequest, authMiddleware } from '../middleware/auth.js';
 
@@ -10,17 +9,6 @@ const router = Router();
 
 const COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
 const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
-
-// Configure Nodemailer transporter for Brevo SMTP
-const transporter = nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 587,
-    secure: false, // true for 465, false for other ports
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS, // This is your Brevo SMTP key
-    },
-});
 
 // ───── REGISTER ─────
 router.post('/register', async (req, res) => {
@@ -84,18 +72,26 @@ router.post('/register', async (req, res) => {
             [userId, token, expiresAt]
         );
 
-        // Send verification email via Brevo SMTP
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-        const verifyUrl = `http://localhost:${process.env.PORT || 3001}/api/auth/verify/${token}`;
-
         try {
-            const hasSmtpConfig = process.env.SMTP_USER && process.env.SMTP_PASS && process.env.SMTP_USER !== 'your-email@gmail.com';
-            if (hasSmtpConfig) {
-                await transporter.sendMail({
-                    from: `"TrailThread" <${process.env.SMTP_USER}>`,
-                    to: email,
-                    subject: 'Verify your TrailThread account',
-                    html: `
+            // Send verification email via Brevo API
+            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+            const verifyUrl = `http://localhost:${process.env.PORT || 3001}/api/auth/verify/${token}`;
+            const senderEmail = process.env.SENDER_EMAIL || 'lukas@thetrailthread.com';
+            const brevoApiKey = process.env.BREVO_API_KEY;
+
+            if (brevoApiKey) {
+                const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+                    method: 'POST',
+                    headers: {
+                        'accept': 'application/json',
+                        'api-key': brevoApiKey,
+                        'content-type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sender: { name: "TrailThread", email: senderEmail },
+                        to: [{ email: email, name: username }],
+                        subject: "Verify your TrailThread account",
+                        htmlContent: `
             <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
               <h1 style="font-size: 24px; color: #1e293b;">Welcome to TrailThread!</h1>
               <p style="color: #64748b; line-height: 1.6;">
@@ -108,11 +104,17 @@ router.post('/register', async (req, res) => {
                 This link expires in 24 hours. If you didn't create this account, you can ignore this email.
               </p>
             </div>
-          `,
+          `
+                    })
                 });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Brevo API error:', response.status, errorText);
+                }
             } else {
-                // No SMTP config — auto-verify for development
-                console.log(`⚠️  No SMTP configuration — auto-verifying user ${username}`);
+                // No configuration — auto-verify for development
+                console.log(`⚠️  No Email configuration — auto-verifying user ${username}`);
                 console.log(`   Verification link would be: ${verifyUrl}`);
                 await pool.query('UPDATE users SET verified = TRUE WHERE id = $1', [userId]);
             }
@@ -121,7 +123,7 @@ router.post('/register', async (req, res) => {
             // Still continue — user can request re-send later
         }
 
-        const isAutoVerified = !process.env.SMTP_USER || !process.env.SMTP_PASS || process.env.SMTP_USER === 'your-email@gmail.com';
+        const isAutoVerified = !process.env.BREVO_API_KEY;
 
         res.status(201).json({
             message: isAutoVerified
