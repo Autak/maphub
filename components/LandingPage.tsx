@@ -92,13 +92,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-black font-sans text-white">
+    <div className="relative w-full min-h-screen overflow-x-hidden overflow-y-auto bg-black font-sans text-white">
       {/* Background Cinematic Video/Image */}
       <motion.div
         initial={{ scale: 1.1, opacity: 0 }}
         animate={{ scale: 1, opacity: 0.6 }}
         transition={{ duration: 3, ease: 'easeOut' }}
-        className="absolute inset-0 z-0"
+        className="fixed inset-0 z-0"
       >
         <img
           src="https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&q=80&w=2000"
@@ -111,7 +111,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
       </motion.div>
 
       {/* Main Content Container */}
-      <div className="relative z-10 w-full h-full flex items-center justify-start px-8 md:px-24">
+      <div className="relative z-10 w-full min-h-screen flex items-center justify-start px-8 md:px-24 py-8">
 
         <div className="max-w-md w-full">
           {/* Logo & Headline */}
@@ -119,22 +119,22 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="mb-12"
+            className="mb-6 md:mb-8"
           >
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-white border border-white/20 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4 md:mb-6">
+              <div className="w-10 h-10 md:w-12 md:h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center text-white border border-white/20 shadow-2xl">
                 <Globe size={24} strokeWidth={1.5} />
               </div>
               <span className="text-xl font-bold tracking-widest uppercase text-white/90">TrailThread</span>
             </div>
 
-            <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-[1.1] tracking-tight">
+            <h1 className="text-4xl md:text-6xl font-bold mb-4 md:mb-6 leading-[1.1] tracking-tight">
               Share your world.<br />
               <span className="text-white/50 italic font-light">One pin at a time.</span>
             </h1>
 
-            <p className="text-lg text-white/70 font-light leading-relaxed max-w-sm">
-              The social journal for passionate explorers. Map your memories with pixel-perfect precision.
+            <p className="text-base md:text-lg text-white/70 font-light leading-relaxed max-w-sm">
+              The social journal for passionate explorers. Map your memories.
             </p>
           </motion.div>
 
@@ -143,7 +143,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-2xl"
+            className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl"
           >
             <form onSubmit={handleFormSubmit} className="space-y-4">
               <div className="flex justify-between items-center mb-4">
@@ -152,7 +152,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                 </h2>
               </div>
 
-              <AnimatePresence mode="popLayout">
+              <AnimatePresence>
                 {isRegistering && (
                   <motion.div
                     initial={{ opacity: 0, height: 0, marginTop: 0 }}
