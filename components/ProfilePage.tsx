@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { User, Trip, MapLocation } from '../types';
-import { Camera, MapPin, Calendar, Edit2, Check, LogOut, Loader2, Globe, Lock, Heart, Bookmark, Compass } from 'lucide-react';
+import { Camera, MapPin, Calendar, Edit2, Check, LogOut, Loader2, Globe, Lock, Heart, Bookmark, Compass, Plus } from 'lucide-react';
 import { DIFFICULTY_LEVELS } from '../constants';
 import { compressImage } from '../services/imageService';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,6 +14,7 @@ interface ProfilePageProps {
   onLogout: () => void;
   onViewTrip: (tripId: string) => void;
   onViewTripFromProfile: (tripId: string) => void;
+  onCreateTrip?: () => void;
 }
 
 type ProfileTab = 'public' | 'private' | 'saved';
@@ -35,7 +36,7 @@ const AnimatedCounter = ({ value, label }: { value: number, label: string }) => 
   );
 };
 
-const ProfilePage: React.FC<ProfilePageProps> = ({ user, trips, locations, allUsers, onUpdateUser, onLogout, onViewTrip, onViewTripFromProfile }) => {
+const ProfilePage: React.FC<ProfilePageProps> = ({ user, trips, locations, allUsers, onUpdateUser, onLogout, onViewTrip, onViewTripFromProfile, onCreateTrip }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [bio, setBio] = useState(user.bio || '');
   const [username, setUsername] = useState(user.username);
@@ -146,7 +147,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, trips, locations, allUs
 
         <div className="absolute top-6 right-6 z-10">
           <button onClick={onLogout} className="bg-white/5 hover:bg-white border border-white/10 text-white hover:text-black px-5 py-2.5 rounded-full backdrop-blur-md flex items-center gap-2 text-xs font-bold uppercase tracking-widest transition-all">
-            <LogOut size={14} /> Disconnect
+            <LogOut size={14} /> Sign out
           </button>
         </div>
       </div>
@@ -224,36 +225,53 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, trips, locations, allUs
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-16">
           <AnimatedCounter value={myTrips.length} label="Expeditions" />
-          <AnimatedCounter value={myLocations.length} label="Waypoints" />
+          <AnimatedCounter value={myLocations.length} label="Map pins" />
           <AnimatedCounter value={totalLikes} label="Resonances" />
         </div>
 
         {/* Cinematic Segmented Control Tabs */}
-        <div className="flex p-1.5 mb-10 bg-white/5 border border-white/10 rounded-full w-full max-w-md mx-auto relative overflow-hidden backdrop-blur-md">
-          <div
-            className="absolute top-1.5 bottom-1.5 bg-white rounded-full transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]"
-            style={{
-              width: 'calc(33.333% - 4px)',
-              transform: `translateX(${activeTab === 'public' ? '0' : activeTab === 'private' ? '100%' : '200%'})`,
-              left: activeTab === 'public' ? '4px' : activeTab === 'private' ? '2px' : '0px'
-            }}
-          />
-
-          <button onClick={() => setActiveTab('public')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest z-10 transition-colors duration-300 flex justify-center items-center gap-2 ${activeTab === 'public' ? 'text-black' : 'text-white/50 hover:text-white'}`}>
-            <Globe size={14} /> Public
-          </button>
-          <button onClick={() => setActiveTab('private')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest z-10 transition-colors duration-300 flex justify-center items-center gap-2 ${activeTab === 'private' ? 'text-black' : 'text-white/50 hover:text-white'}`}>
-            <Lock size={14} /> Vault
-          </button>
-          <button onClick={() => setActiveTab('saved')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest z-10 transition-colors duration-300 flex justify-center items-center gap-2 ${activeTab === 'saved' ? 'text-black' : 'text-white/50 hover:text-white'}`}>
-            <Bookmark size={14} /> Arsenal
-          </button>
+        <div className="flex items-center gap-4 mb-10 w-full place-content-center">
+          <div className="flex p-1.5 bg-white/5 border border-white/10 rounded-full w-full max-w-md relative overflow-hidden backdrop-blur-md">
+            <div
+              className="absolute top-1.5 bottom-1.5 bg-white rounded-full transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]"
+              style={{
+                width: 'calc(33.333% - 4px)',
+                transform: `translateX(${activeTab === 'public' ? '0' : activeTab === 'private' ? '100%' : '200%'})`,
+                left: activeTab === 'public' ? '4px' : activeTab === 'private' ? '2px' : '0px'
+              }}
+            />
+            <button onClick={() => setActiveTab('public')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest z-10 transition-colors duration-300 flex justify-center items-center gap-2 ${activeTab === 'public' ? 'text-black' : 'text-white/50 hover:text-white'}`}>
+              <Globe size={14} /> Public
+            </button>
+            <button onClick={() => setActiveTab('private')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest z-10 transition-colors duration-300 flex justify-center items-center gap-2 ${activeTab === 'private' ? 'text-black' : 'text-white/50 hover:text-white'}`}>
+              <Lock size={14} /> Private
+            </button>
+            <button onClick={() => setActiveTab('saved')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest z-10 transition-colors duration-300 flex justify-center items-center gap-2 ${activeTab === 'saved' ? 'text-black' : 'text-white/50 hover:text-white'}`}>
+              <Bookmark size={14} /> Saved trips
+            </button>
+          </div>
         </div>
 
-        {/* Trips Grid Layout */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <AnimatePresence mode='popLayout'>
-            {tabTrips.length === 0 ? (
+            {onCreateTrip && activeTab !== 'saved' && (
+              <motion.div
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                onClick={onCreateTrip}
+                className="group relative rounded-[2rem] overflow-hidden cursor-pointer bg-white/5 border border-white/20 border-dashed hover:border-white hover:bg-white/10 transition-all duration-500 h-[320px] flex flex-col items-center justify-center text-white/50 hover:text-white"
+              >
+                <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-500">
+                  <Plus size={32} strokeWidth={2} />
+                </div>
+                <h3 className="text-2xl font-bold tracking-tight mb-2 drop-shadow-xl text-white">New Journey</h3>
+                <p className="text-[10px] font-bold uppercase tracking-widest">Start forging a new path</p>
+              </motion.div>
+            )}
+
+            {tabTrips.length === 0 && (!onCreateTrip || activeTab === 'saved') ? (
               <motion.div
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="col-span-full py-24 text-center border border-white/10 rounded-[2rem] bg-white/5 backdrop-blur-md"
@@ -262,7 +280,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, trips, locations, allUs
                   {activeTab === 'saved' ? <Bookmark size={24} className="text-white/30" /> : activeTab === 'private' ? <Lock size={24} className="text-white/30" /> : <Globe size={24} className="text-white/30" />}
                 </div>
                 <h3 className="text-xl font-light text-white mb-2">
-                  {activeTab === 'saved' ? 'Empty Arsenal' : activeTab === 'private' ? 'Empty Vault' : 'No Public Traces'}
+                  {activeTab === 'saved' ? 'Empty trips' : activeTab === 'private' ? 'Empty Private' : 'No Public Traces'}
                 </h3>
                 <p className="text-white/40 text-sm">
                   {activeTab === 'saved' ? 'Bookmark expeditions from the Explore feed to collect them here.' : 'Forge a new path and chronicle your memories.'}

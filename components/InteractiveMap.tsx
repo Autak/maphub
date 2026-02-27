@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapLocation, Coordinates, Trip, User } from '../types';
 import { TILE_LAYERS, DEFAULT_CENTER, DEFAULT_ZOOM, TileLayerKey } from '../constants';
-import { Search, Loader2, Layers } from 'lucide-react';
+import { Search, Loader2, Layers, Route, X } from 'lucide-react';
+import { fetchHikingRoute } from '../services/mapyCzRouting';
 
 // Fix Leaflet marker icon issue
 if (typeof window !== 'undefined') {
@@ -25,6 +26,9 @@ interface InteractiveMapProps {
   onMarkerClick?: (id: string) => void;
   readonly?: boolean;
   isSidebarOpen?: boolean;
+  activeTripId?: string | null;
+  activeTrip?: Trip;
+  onSaveRoute?: (routeData: { name: string; points: { lat: number; lng: number; ele?: number }[]; distanceKm: number; ascent: number; descent: number; day: number | 'all' }) => Promise<void>;
 }
 
 const MapEvents: React.FC<{ onMapClick?: (coords: Coordinates) => void; readonly: boolean }> = ({ onMapClick, readonly }) => {
@@ -91,12 +95,104 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({
   selectedLocationId,
   onMarkerClick,
   readonly = false,
-  isSidebarOpen = false
+  isSidebarOpen = false,
+  activeTripId,
+  activeTrip,
+  onSaveRoute,
 }) => {
   const [activeLayer, setActiveLayer] = useState<TileLayerKey>('mapy_outdoor');
   const [isLayerSwitcherOpen, setIsLayerSwitcherOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+
+  // Routing State
+  const [routePlanMode, setRoutePlanMode] = useState(false);
+  const [pendingWaypoints, setPendingWaypoints] = useState<({ lat: number, lng: number } | null)[]>([null]);
+  const [pendingRoute, setPendingRoute] = useState<[number, number][] | null>(null);
+  const [routingLoading, setRoutingLoading] = useState(false);
+  const [routingError, setRoutingError] = useState<string | null>(null);
+  const [pendingRouteKm, setPendingRouteKm] = useState(0);
+  const [pendingRouteAscent, setPendingRouteAscent] = useState(0);
+  const [pendingRouteDescent, setPendingRouteDescent] = useState(0);
+  const [pendingRoutePoints, setPendingRoutePoints] = useState<{ lat: number; lng: number; ele?: number }[]>([]);
+  const [newRouteName, setNewRouteName] = useState('');
+  const [routeSaveDay, setRouteSaveDay] = useState<number | 'all'>('all');
+  const [isSavingRoute, setIsSavingRoute] = useState(false);
+
+  // Compute days for active trip (if any)
+  const activeTripDays = activeTrip?.startDate && activeTrip?.endDate
+    ? Math.max(1, Math.ceil((activeTrip.endDate - activeTrip.startDate) / (1000 * 60 * 60 * 24)) + 1)
+    : activeTrip?.gpxStats?.estimatedDays || 1;
+
+  const handleMapClick = async (lat: number, lng: number) => {
+    if (!routePlanMode) {
+      if (onMapClick) onMapClick({ lat, lng });
+      return;
+    }
+
+    const lastEl = pendingWaypoints[pendingWaypoints.length - 1];
+    if (lastEl === null) {
+      const newWps = [...pendingWaypoints];
+      newWps[newWps.length - 1] = { lat, lng };
+      if (newWps.length < 8) newWps.push(null);
+      setPendingWaypoints(newWps);
+
+      const validWps = newWps.filter(w => w !== null) as { lat: number, lng: number }[];
+      if (validWps.length >= 2) {
+        setRoutingLoading(true);
+        setRoutingError(null);
+        try {
+          const apiKey = (import.meta as any).env.VITE_MAPY_API_KEY || '';
+          const route = await fetchHikingRoute(validWps, apiKey);
+          setPendingRoute(route.points.map((p: any) => [p.lat, p.lng] as [number, number]));
+          setPendingRouteKm(route.distanceKm);
+          setPendingRouteAscent(route.ascent || 0);
+          setPendingRouteDescent(route.descent || 0);
+          setPendingRoutePoints(route.points);
+        } catch (err: any) {
+          console.error(err);
+          setRoutingError(err.message || 'Failed to calculate route');
+        } finally {
+          setRoutingLoading(false);
+        }
+      } else {
+        setPendingRoute(null);
+        setPendingRouteKm(0);
+        setPendingRouteAscent(0);
+        setPendingRouteDescent(0);
+        setPendingRoutePoints([]);
+      }
+    }
+  };
+
+  const handleSaveRoute = async () => {
+    if (!onSaveRoute || !pendingRoute || !newRouteName.trim()) return;
+    setIsSavingRoute(true);
+    try {
+      await onSaveRoute({
+        name: newRouteName.trim(),
+        points: pendingRoutePoints,
+        distanceKm: pendingRouteKm,
+        ascent: pendingRouteAscent,
+        descent: pendingRouteDescent,
+        day: routeSaveDay,
+      });
+      // Reset after save
+      setRoutePlanMode(false);
+      setPendingWaypoints([null]);
+      setPendingRoute(null);
+      setPendingRouteKm(0);
+      setPendingRouteAscent(0);
+      setPendingRouteDescent(0);
+      setPendingRoutePoints([]);
+      setNewRouteName('');
+      setRouteSaveDay('all');
+    } catch (err) {
+      console.error('Failed to save route:', err);
+    } finally {
+      setIsSavingRoute(false);
+    }
+  };
 
   // Search logic
   const SearchController = () => {
@@ -145,13 +241,42 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({
       >
         <DynamicTileLayer layerKey={activeLayer} />
 
-        <MapEvents onMapClick={onMapClick} readonly={readonly} />
+        <MapEvents onMapClick={(coords) => handleMapClick(coords.lat, coords.lng)} readonly={readonly && !routePlanMode} />
         <MapController
           selectedLocationId={selectedLocationId}
           locations={locations}
           isSidebarOpen={isSidebarOpen}
         />
         <MapRevalidator isSidebarOpen={isSidebarOpen} />
+
+        {/* Plan Mode Overlays */}
+        {routePlanMode && pendingRoute && (
+          <Polyline
+            positions={pendingRoute}
+            pathOptions={{ color: '#ec4899', weight: 4, opacity: 0.8 }} // Pink for active planning
+          />
+        )}
+        {routePlanMode && pendingWaypoints.map((wp, i) => {
+          if (!wp) return null;
+          const isStart = i === 0;
+          const isEnd = i === pendingWaypoints.length - 1 && wp;
+          let bgColor = '#fff';
+          if (isStart) bgColor = '#22c55e';
+          else if (isEnd) bgColor = '#ef4444';
+
+          return (
+            <Marker
+              key={`wp-${i}`}
+              position={[wp.lat, wp.lng]}
+              icon={L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div style="background-color: ${bgColor}; border: 2px solid black; border-radius: 50%; width: 12px; height: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.5);"></div>`,
+                iconSize: [12, 12],
+                iconAnchor: [6, 6],
+              })}
+            />
+          );
+        })}
 
         {locations.map((loc) => {
           const user = users.find(u => u.id === loc.userId);
@@ -202,9 +327,102 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({
         })}
       </MapContainer>
 
-      {/* Layer Switcher */}
+      {/* Layer Switcher & Routing Tools */}
       {!readonly && (
-        <div className="absolute bottom-28 right-4 z-[400] flex flex-col items-end">
+        <div className="absolute bottom-28 right-4 z-[400] flex flex-col items-end gap-3">
+
+          {/* Plan Route Toggle */}
+          {!routePlanMode ? (
+            <button
+              onClick={() => setRoutePlanMode(true)}
+              className="px-4 h-10 rounded-lg bg-white shadow-lg border border-slate-200 flex items-center justify-center gap-2 text-slate-800 font-bold text-sm hover:bg-slate-50 hover:text-pink-500 transition"
+              title="Plan Route"
+            >
+              <Route size={18} className="text-pink-500" /> Plan Trail
+            </button>
+          ) : (
+            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 p-4 w-64 flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                <h4 className="text-slate-800 font-bold text-sm">Plan a Trail</h4>
+                <button
+                  onClick={() => {
+                    setRoutePlanMode(false);
+                    setPendingWaypoints([null]);
+                    setPendingRoute(null);
+                    setPendingRouteKm(0);
+                    setPendingRouteAscent(0);
+                    setPendingRouteDescent(0);
+                    setPendingRoutePoints([]);
+                    setNewRouteName('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500">Click the map to add up to 8 trail waypoints.</p>
+
+              {pendingWaypoints.length > 1 && (
+                <div className="flex justify-between text-xs text-slate-700 bg-slate-50 p-2 rounded border border-slate-100 font-bold">
+                  <span>{pendingRouteKm} km</span>
+                  <span className="text-green-600">+{pendingRouteAscent}m</span>
+                  <span className="text-red-500">-{pendingRouteDescent}m</span>
+                </div>
+              )}
+
+              {routingError && <p className="text-[10px] text-red-500">{routingError}</p>}
+              {routingLoading && <p className="text-[10px] text-slate-400">Calculating route...</p>}
+
+              {onSaveRoute && activeTripId && pendingRoute && (
+                <input
+                  type="text"
+                  placeholder="Trail name..."
+                  value={newRouteName}
+                  onChange={(e) => setNewRouteName(e.target.value)}
+                  className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-pink-400 text-slate-800"
+                />
+              )}
+
+              {onSaveRoute && activeTripId && pendingRoute && activeTripDays > 1 && (
+                <select
+                  value={routeSaveDay}
+                  onChange={e => setRouteSaveDay(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-pink-400 text-slate-700 bg-white"
+                >
+                  <option value="all">All Days</option>
+                  {Array.from({ length: activeTripDays }, (_, i) => (
+                    <option key={i + 1} value={i + 1}>Day {i + 1}</option>
+                  ))}
+                </select>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setPendingWaypoints([null]);
+                    setPendingRoute(null);
+                    setPendingRouteKm(0);
+                    setPendingRouteAscent(0);
+                    setPendingRouteDescent(0);
+                    setPendingRoutePoints([]);
+                  }}
+                  className="flex-1 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded transition"
+                >
+                  Clear
+                </button>
+                {onSaveRoute && activeTripId && pendingRoute && (
+                  <button
+                    onClick={handleSaveRoute}
+                    disabled={!newRouteName.trim() || isSavingRoute}
+                    className="flex-1 py-1.5 text-xs font-bold bg-pink-500 text-white rounded hover:bg-pink-600 disabled:opacity-40 transition"
+                  >
+                    {isSavingRoute ? 'Saving…' : 'Save'}
+                  </button>
+                )}
+              </div>
+
+            </div>
+          )}
           {isLayerSwitcherOpen && (
             <div className="bg-white rounded-lg shadow-xl border border-slate-200 mb-2 overflow-hidden w-40">
               {(Object.keys(TILE_LAYERS) as TileLayerKey[]).map(key => (

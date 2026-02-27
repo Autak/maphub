@@ -76,7 +76,15 @@ router.post('/register', async (req, res) => {
             // Send verification email via Brevo API
             const protocol = req.protocol;
             const host = req.get('host');
-            const verifyUrl = `${protocol}://${host}/api/auth/verify/${token}`;
+
+            let baseUrl = `${protocol}://${host}`;
+            if (process.env.BACKEND_URL) {
+                baseUrl = process.env.BACKEND_URL;
+            } else if (host && !host.includes('localhost')) {
+                baseUrl = 'https://thetrailthread.com';
+            }
+
+            const verifyUrl = `${baseUrl}/api/auth/verify/${token}`;
             const senderEmail = process.env.SENDER_EMAIL || 'lukas@thetrailthread.com';
             const brevoApiKey = process.env.BREVO_API_KEY;
 
@@ -162,7 +170,8 @@ router.get('/verify/:token', async (req, res) => {
         await pool.query('UPDATE users SET verified = TRUE WHERE id = $1', [user_id]);
         await pool.query('DELETE FROM verification_tokens WHERE user_id = $1', [user_id]);
 
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const isProd = !req.get('host')?.includes('localhost');
+        const frontendUrl = process.env.FRONTEND_URL || (isProd ? 'https://thetrailthread.com' : 'http://localhost:3000');
         res.send(`
       <html><body style="font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
         <div style="text-align: center;">

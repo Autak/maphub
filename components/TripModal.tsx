@@ -11,6 +11,7 @@ interface TripModalProps {
     description: string;
     date: string;
     endDate?: string;
+    location?: string;
     visibility: 'public' | 'private' | 'friends';
     difficulty?: 'easy' | 'moderate' | 'hard' | 'expert';
     tags: string[];
@@ -24,6 +25,7 @@ interface TripModalProps {
 const TripModal: React.FC<TripModalProps> = ({ onClose, onSave }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [location, setLocation] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private' | 'friends'>('public');
@@ -119,6 +121,7 @@ const TripModal: React.FC<TripModalProps> = ({ onClose, onSave }) => {
       description,
       date,
       endDate: endDate || undefined,
+      location: location.trim() || undefined,
       visibility,
       difficulty,
       tags: selectedTags,
@@ -130,8 +133,8 @@ const TripModal: React.FC<TripModalProps> = ({ onClose, onSave }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-down max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-page-in max-h-[90vh] flex flex-col">
         <div className="p-4 border-b flex justify-between items-center bg-slate-50 flex-shrink-0">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <Map size={20} className="text-blue-600" />
@@ -181,6 +184,21 @@ const TripModal: React.FC<TripModalProps> = ({ onClose, onSave }) => {
               className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
               autoFocus
             />
+          </div>
+
+          {/* Location */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Location / Country</label>
+            <div className="relative">
+              <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="e.g., Gran Canaria, Spain"
+                className="w-full pl-9 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-700 text-sm"
+              />
+            </div>
           </div>
 
           {/* Dates */}
@@ -278,105 +296,7 @@ const TripModal: React.FC<TripModalProps> = ({ onClose, onSave }) => {
             </div>
           </div>
 
-          {/* GPX Track Upload */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
-              <FileUp size={14} /> GPX Route Track
-            </label>
-            {!gpxPoints ? (
-              <button
-                type="button"
-                onClick={() => gpxInputRef.current?.click()}
-                disabled={parsingGPX}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 hover:bg-slate-100 hover:border-blue-400 transition"
-              >
-                {parsingGPX ? (
-                  <>
-                    <Loader2 className="animate-spin" size={16} />
-                    <span className="text-xs font-bold">Parsing GPX...</span>
-                  </>
-                ) : (
-                  <>
-                    <FileUp size={18} />
-                    <span className="text-xs font-bold">Upload GPX File (.gpx)</span>
-                  </>
-                )}
-              </button>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-100 rounded-xl">
-                  <div className="flex items-center gap-2 text-emerald-700">
-                    <FileUp size={16} />
-                    <span className="text-xs font-bold truncate max-w-[150px]">{gpxFileName}</span>
-                    <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded uppercase font-black">{gpxPoints.length} pts</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setGpxPoints(null); setGpxStats(null); setGpxFileName(null); }}
-                    className="p-1.5 text-emerald-600 hover:bg-emerald-100 rounded-full transition"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                {gpxStats && (
-                  <div className="flex gap-4 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-[10px] font-bold text-blue-700">
-                    <span className="flex items-center gap-1">📏 {gpxStats.distanceKm} km</span>
-                    <span className="flex items-center gap-1">⏳ Est. {gpxStats.estimatedDays} {gpxStats.estimatedDays === 1 ? 'day' : 'days'}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            <input
-              type="file"
-              ref={gpxInputRef}
-              accept=".gpx"
-              className="hidden"
-              onChange={handleGPXFile}
-            />
-          </div>
 
-          {/* External Links */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
-              <Globe size={14} /> External Hike Links (Maps.cz, Komoot...)
-            </label>
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newLinkLabel}
-                  onChange={(e) => setNewLinkLabel(e.target.value)}
-                  placeholder="Label (e.g. Komoot)"
-                  className="flex-1 px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none"
-                />
-                <input
-                  type="text"
-                  value={newLinkUrl}
-                  onChange={(e) => setNewLinkUrl(e.target.value)}
-                  placeholder="URL"
-                  className="flex-[2] px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={addExternalLink}
-                  className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-xs font-bold hover:bg-slate-200"
-                >
-                  Add
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {externalLinks.map((link, idx) => (
-                  <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-full text-[10px] font-bold text-slate-600">
-                    <Globe size={10} />
-                    <span>{link.label}</span>
-                    <button type="button" onClick={() => removeLink(idx)} className="text-slate-400 hover:text-red-500">
-                      <X size={10} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
 
           {/* Description */}
           <div>

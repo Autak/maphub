@@ -53,7 +53,7 @@ export function computeTripStats(locations: MapLocation[], startDate: number, en
     return {
         distance: Math.round(distance * 10) / 10, // km, 1 decimal
         days,
-        stops: locations.length,
+        pins: locations.length,
         summits: summitCount,
         camps: campCount,
         waterfalls: waterfallCount,

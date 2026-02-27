@@ -1,13 +1,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import InteractiveMap from './components/InteractiveMap';
 import LocationModal from './components/LocationModal';
-import StatsSidebar from './components/StatsSidebar';
 import LandingPage from './components/LandingPage';
 import TripModal from './components/TripModal';
 import ProfilePage from './components/ProfilePage';
 import ExploreFeed from './components/ExploreFeed';
 import TripDetailPage from './components/TripDetailPage';
 import NavBar from './components/NavBar';
+import ExpeditionDashboard from './components/ExpeditionDashboard';
 import { MapLocation, Coordinates, NewLocationDraft, User, Trip } from './types';
 import { api, setToken, clearToken, AuthUser } from './services/api';
 import { Plus } from 'lucide-react';
@@ -128,6 +127,7 @@ const App: React.FC = () => {
     description: string;
     date: string;
     endDate?: string;
+    location?: string;
     visibility: 'public' | 'private' | 'friends';
     difficulty?: 'easy' | 'moderate' | 'hard' | 'expert';
     tags: string[];
@@ -143,6 +143,7 @@ const App: React.FC = () => {
         description: data.description,
         startDate: new Date(data.date).getTime(),
         endDate: data.endDate ? new Date(data.endDate).getTime() : undefined,
+        location: data.location,
         visibility: data.visibility,
         difficulty: data.difficulty,
         tags: data.tags,
@@ -189,7 +190,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateLocation = async (locationId: string, data: { title?: string; comment?: string; type?: string }) => {
+  const handleUpdateLocation = async (locationId: string, data: { title?: string; comment?: string; type?: string; timestamp?: number }) => {
     try {
       const updated = await api.updateLocation(locationId, data);
       setLocations(prev => prev.map(l => l.id === locationId ? updated : l));
@@ -197,6 +198,14 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('Failed to update location:', err);
     }
+  };
+
+  const handleSaveRouteToTrip = async (routeData: { name: string; points: { lat: number; lng: number; ele?: number }[]; distanceKm: number; ascent: number; descent: number; day: 'all' }) => {
+    if (!activeTripId) return;
+    const trip = trips.find(t => t.id === activeTripId);
+    if (!trip) return;
+    const currentRoutes = trip.hikingRoutes || [];
+    await handleUpdateTrip(activeTripId, { hikingRoutes: [...currentRoutes, routeData] });
   };
 
   const handleDeleteLocation = async (locationId: string) => {
@@ -263,6 +272,24 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddLocationFromTrip = async (data: Omit<MapLocation, 'id'>) => {
+    try {
+      const newLocation = await api.createLocation({
+        tripId: data.tripId,
+        coords: data.coords,
+        title: data.title,
+        comment: data.comment,
+        photoUrl: data.photoUrl,
+        type: data.type,
+        timestamp: data.timestamp,
+      });
+      setLocations(prev => [...prev, newLocation]);
+      return newLocation;
+    } catch (err) {
+      console.error('Failed to add location from trip:', err);
+    }
+  };
+
   const handleViewTrip = (tripId: string, source: 'profile' | 'explore' = 'explore') => {
     setViewingTripId(tripId);
     setTripDetailSource(source);
@@ -313,6 +340,7 @@ const App: React.FC = () => {
             onUpdateLocation={handleUpdateLocation}
             onDeleteLocation={handleDeleteLocation}
             onDeleteTrip={handleDeleteTrip}
+            onAddLocation={isEditable ? handleAddLocationFromTrip : undefined}
           />
         </div>
       );
@@ -322,68 +350,18 @@ const App: React.FC = () => {
   return (
     <div className="relative w-full h-full bg-slate-100 overflow-hidden font-sans">
 
-      {/* Map is always rendered in the background — dim when other views are active */}
-      <div className={`absolute inset-0 z-0 transition-opacity duration-300 ${currentView === 'map' ? 'opacity-100' : 'opacity-10 pointer-events-none'}`}>
-        <InteractiveMap
-          locations={locations}
-          trips={trips}
-          users={users}
-          onMapClick={handleMapClick}
-          selectedLocationId={selectedLocationId}
-          onMarkerClick={(id) => {
-            setSelectedLocationId(id);
-            setIsSidebarOpen(true);
-            const loc = locations.find(l => l.id === id);
-            if (loc) setActiveTripId(loc.tripId);
-          }}
-          isSidebarOpen={isSidebarOpen}
-        />
-      </div>
-
-      {/* Map Overlay UI */}
-      <div className={`absolute inset-0 z-10 pointer-events-none ${currentView === 'map' ? 'block' : 'hidden'}`}>
-
-        <StatsSidebar
-          currentUser={currentUser}
-          trips={trips}
-          locations={locations}
-          activeTripId={activeTripId}
-          selectedLocationId={selectedLocationId}
-          onSelectTrip={(id) => setActiveTripId(prev => prev === id ? null : id)}
-          onSelectLocation={(id) => setSelectedLocationId(id)}
-          onCreateTrip={() => setShowTripModal(true)}
-          onDeleteTrip={handleDeleteTrip}
-          onToggleVisibility={handleToggleVisibility}
-          onLogout={handleLogout}
-          isOpen={isSidebarOpen}
-          toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-          onViewChange={setCurrentView}
-        />
-
-        {/* Floating Messages */}
-        {activeTripId ? (
-          !draftLocation && (
-            <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-[800] bg-white/5 backdrop-blur-xl px-5 py-2.5 rounded-full shadow-2xl border border-white/20 pointer-events-auto animate-fade-in-down">
-              <p className="text-white font-medium text-xs flex items-center gap-3">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></span>
-                </span>
-                Tracking: <span className="font-bold text-white tracking-wide">{trips.find(t => t.id === activeTripId)?.title}</span>
-              </p>
-            </div>
-          )
-        ) : (
-          <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-[800] bg-white text-black backdrop-blur-xl px-6 py-3 rounded-full shadow-2xl animate-fade-in-down cursor-pointer hover:scale-105 hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-all pointer-events-auto flex items-center gap-2" onClick={() => setShowTripModal(true)}>
-            <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center">
-              <Plus size={12} strokeWidth={3} />
-            </div>
-            <p className="font-bold text-sm tracking-wide">
-              Begin Expedition
-            </p>
-          </div>
-        )}
-      </div>
+      {/* VIEW: MY MAP (Expedition Dashboard) */}
+      {currentView === 'map' && (
+        <div className="absolute inset-0 z-10 animate-page-in">
+          <ExpeditionDashboard
+            currentUser={currentUser}
+            trips={trips}
+            locations={locations}
+            onViewTrip={(id) => handleViewTrip(id, 'profile')}
+            onCreateTrip={() => setShowTripModal(true)}
+          />
+        </div>
+      )}
 
       {/* VIEW: FEED */}
       {currentView === 'feed' && (
@@ -412,6 +390,7 @@ const App: React.FC = () => {
             onUpdateUser={handleUpdateUser}
             onLogout={handleLogout}
             onViewTrip={handleViewTrip}
+            onCreateTrip={() => setShowTripModal(true)}
           />
         </div>
       )}

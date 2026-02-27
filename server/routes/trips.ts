@@ -23,6 +23,7 @@ const mapTrip = (t: any) => ({
     packingList: t.packing_list || [],
     dayComments: t.day_comments || {},
     externalLinks: t.external_links || [],
+    hikingRoutes: t.hiking_routes || [],
 });
 
 // ───── GET ALL TRIPS (for map + explore) ─────
@@ -61,7 +62,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { title, description, startDate, endDate, visibility, difficulty, tags, coverPhotoUrl, gpxData, gpxStats, packingItems, externalLinks, packingList, dayComments } = req.body;
+        const { title, description, startDate, endDate, visibility, difficulty, tags, coverPhotoUrl, gpxData, gpxStats, packingItems, externalLinks, packingList, dayComments, hikingRoutes } = req.body;
 
         const result = await pool.query(
             `UPDATE trips SET
@@ -78,9 +79,20 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
                 packing_items = COALESCE($13, packing_items),
                 external_links = COALESCE($14, external_links),
                 packing_list = COALESCE($15, packing_list),
-                day_comments = COALESCE($16, day_comments)
+                day_comments = COALESCE($16, day_comments),
+                hiking_routes = COALESCE($17, hiking_routes)
             WHERE id = $1 AND user_id = $2 RETURNING *`,
-            [id, req.userId, title, description, startDate, endDate, visibility, difficulty, tags, coverPhotoUrl, gpxData ? JSON.stringify(gpxData) : null, gpxStats ? JSON.stringify(gpxStats) : null, packingItems, externalLinks ? JSON.stringify(externalLinks) : null, packingList, dayComments ? JSON.stringify(dayComments) : null]
+            [
+                id, req.userId,
+                title, description, startDate, endDate, visibility, difficulty, tags, coverPhotoUrl,
+                gpxData ? JSON.stringify(gpxData) : null,
+                gpxStats ? JSON.stringify(gpxStats) : null,
+                packingItems,
+                externalLinks ? JSON.stringify(externalLinks) : null,
+                packingList,
+                dayComments ? JSON.stringify(dayComments) : null,
+                hikingRoutes ? JSON.stringify(hikingRoutes) : null,
+            ]
         );
 
         if (result.rows.length === 0) return res.status(404).json({ error: 'Trip not found or not owned by you' });

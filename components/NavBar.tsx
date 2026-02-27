@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Map, Compass, User as UserIcon } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 interface NavBarProps {
   currentView: 'map' | 'feed' | 'profile' | 'trip-detail';
@@ -12,8 +12,8 @@ const NavBar: React.FC<NavBarProps> = ({ currentView, setView }) => {
 
   const tabs = [
     { id: 'explore', view: 'feed' as const, icon: Compass, label: 'Explore' },
-    { id: 'map', view: 'map' as const, icon: Map, label: 'My Map' },
-    { id: 'profile', view: 'profile' as const, icon: UserIcon, label: 'Profile' },
+    { id: 'map', view: 'map' as const, icon: Map, label: 'My World' },
+    { id: 'profile', view: 'profile' as const, icon: UserIcon, label: 'My Trips' },
   ];
 
   return (
@@ -33,36 +33,17 @@ const NavBar: React.FC<NavBarProps> = ({ currentView, setView }) => {
             <button
               key={tab.id}
               onClick={() => setView(tab.view)}
-              className={`relative flex items-center justify-center gap-2 px-6 py-3 rounded-full transition-colors duration-300 outline-none ${isActive ? 'text-black' : 'text-white/60 hover:text-white'
+              className={`relative flex items-center justify-center gap-2 px-6 py-3 rounded-full transition-all duration-300 outline-none ${isActive ? 'bg-white text-black shadow-lg scale-105' : 'bg-transparent text-white/60 hover:text-white hover:bg-white/10'
                 }`}
             >
-              <AnimatePresence>
-                {isActive && (
-                  <motion.div
-                    layoutId="nav-indicator"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 bg-white shadow-lg rounded-full"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-              </AnimatePresence>
-
               <Icon
                 size={20}
                 strokeWidth={isActive ? 2.5 : 2}
-                className={`relative z-10 ${isActive ? 'scale-110' : ''} transition-transform duration-300`}
+                className={`relative z-10 transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}
               />
-              {isActive && (
-                <motion.span
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 'auto', opacity: 1 }}
-                  className="relative z-10 text-xs font-bold uppercase tracking-wider overflow-hidden whitespace-nowrap"
-                >
-                  {tab.label}
-                </motion.span>
-              )}
+              <span className="relative z-10 text-xs font-bold uppercase tracking-wider whitespace-nowrap">
+                {tab.label}
+              </span>
             </button>
           );
         })}

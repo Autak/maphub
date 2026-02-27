@@ -32,6 +32,7 @@ export interface Trip {
   visibility: 'public' | 'private' | 'friends';
   difficulty?: 'easy' | 'moderate' | 'hard' | 'expert';
   coverPhotoUrl?: string;
+  location?: string; // e.g. "Gran Canaria, Spain"
   tags?: string[];
   likes?: string[]; // array of user IDs
   gpxData?: { lat: number; lng: number; ele?: number }[];
@@ -40,6 +41,7 @@ export interface Trip {
   packingList?: string[]; // Full list of items (if customized)
   dayComments?: Record<string, string>; // Comments for specific days
   externalLinks?: { label: string; url: string }[];
+  hikingRoutes?: { name: string; points: { lat: number; lng: number; ele?: number }[]; distanceKm: number; day?: number | 'all'; ascent?: number; descent?: number }[];
 }
 
 export interface MapLocation {

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Trip, MapLocation, User } from '../types';
+import { Trip, MapLocation, User, Coordinates } from '../types';
 import { DIFFICULTY_LEVELS, LOCATION_TYPES } from '../constants';
 import { computeTripStats, getRouteCenter } from '../utils/tripStats';
-import { ArrowLeft, Heart, MapPin, Calendar, Mountain, Route, Camera, Bookmark, Edit2, Check, X, Trash2, Upload, FileUp, Globe, Plus, Minus, Tag, Map as MapIcon } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
+import { ArrowLeft, Heart, MapPin, Calendar, Mountain, Route, Camera, Bookmark, Edit2, Check, X, Trash2, Upload, FileUp, Globe, Plus, Minus, Tag, Map as MapIcon, Loader2, Image } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import PhotoLightbox from './PhotoLightbox';
@@ -11,7 +11,19 @@ import WeatherWidget from './WeatherWidget';
 import PackingChecklist from './PackingChecklist';
 import { parseGPX } from '../utils/gpxParser';
 import { ALL_TAGS } from '../utils/packingRules';
+import { fetchHikingRoute } from '../services/mapyCzRouting';
+import { compressImage } from '../services/imageService';
+import { generateFunCaption } from '../services/geminiService';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
+
+const MapEvents: React.FC<{ onClick?: (lat: number, lng: number) => void }> = ({ onClick }) => {
+    useMapEvents({
+        click(e) {
+            if (onClick) onClick(e.latlng.lat, e.latlng.lng);
+        },
+    });
+    return null;
+};
 
 const AltitudeProfileWidget = ({ gpxData }: { gpxData: { lat: number; lng: number; ele?: number }[] }) => {
     const elevations = gpxData.map(p => p.ele || 0).filter(e => e > 0);
@@ -84,9 +96,16 @@ interface MiniMapProps {
     gpxPositions: [number, number][];
     tripLocations: MapLocation[];
     authorColor: string;
+    hikingRoutes?: any[];
+    routePlanMode?: boolean;
+    pendingWaypoints?: ({ lat: number, lng: number } | null)[];
+    pendingRoute?: [number, number][];
+    onPlanMapClick?: (lat: number, lng: number) => void;
+    pendingMemoryPin?: { lat: number, lng: number } | null;
+    onMemoryMapClick?: (lat: number, lng: number) => void;
 }
 
-const MiniMap: React.FC<MiniMapProps> = ({ center, routePositions, gpxPositions, tripLocations, authorColor }) => {
+const MiniMap: React.FC<MiniMapProps> = ({ center, routePositions, gpxPositions, tripLocations, authorColor, hikingRoutes = [], routePlanMode = false, pendingWaypoints = [], pendingRoute, onPlanMapClick, pendingMemoryPin, onMemoryMapClick }) => {
     const apiKey = (import.meta as any).env.VITE_MAPY_API_KEY || '';
     const tileUrl = `https://api.mapy.com/v1/maptiles/outdoor/256/{z}/{x}/{y}?apikey=${apiKey}`;
 
@@ -102,18 +121,56 @@ const MiniMap: React.FC<MiniMapProps> = ({ center, routePositions, gpxPositions,
                 className="h-full w-full"
             >
                 <TileLayer url={tileUrl} />
+                <MapEvents onClick={(lat, lng) => {
+                    if (onPlanMapClick) onPlanMapClick(lat, lng);
+                    if (onMemoryMapClick) onMemoryMapClick(lat, lng);
+                }} />
+
                 {gpxPositions.length > 1 && (
                     <Polyline
                         positions={gpxPositions}
                         pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.8 }}
                     />
                 )}
-                {routePositions.length > 1 && (
+
+
+                {/* Saved Hiking Routes */}
+                {hikingRoutes.map((hr, idx) => (
                     <Polyline
-                        positions={routePositions}
-                        pathOptions={{ color: authorColor, weight: 3, opacity: 0.7, dashArray: '5, 10' }}
+                        key={idx}
+                        positions={hr.points.map((p: any) => [p.lat, p.lng])}
+                        pathOptions={{ color: '#22c55e', weight: 4, opacity: 0.8 }} // Green for saved routes
+                    />
+                ))}
+
+                {/* Plan Mode Overlays */}
+                {routePlanMode && pendingRoute && (
+                    <Polyline
+                        positions={pendingRoute}
+                        pathOptions={{ color: '#ec4899', weight: 4, opacity: 0.8 }} // Pink for active planning
                     />
                 )}
+                {routePlanMode && pendingWaypoints.map((wp, i) => {
+                    if (!wp) return null;
+                    const isStart = i === 0;
+                    const isEnd = i === pendingWaypoints.length - 1 && wp;
+                    let bgColor = '#fff';
+                    if (isStart) bgColor = '#22c55e';
+                    else if (isEnd) bgColor = '#ef4444';
+
+                    return (
+                        <Marker
+                            key={`wp-${i}`}
+                            position={[wp.lat, wp.lng]}
+                            icon={L.divIcon({
+                                className: 'custom-div-icon',
+                                html: `<div style="background-color: ${bgColor}; border: 2px solid ${authorColor}; border-radius: 50%; width: 12px; height: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.5);"></div>`,
+                                iconSize: [12, 12],
+                                iconAnchor: [6, 6],
+                            })}
+                        />
+                    );
+                })}
                 {tripLocations.map((loc) => (
                     <Marker
                         key={loc.id}
@@ -140,6 +197,19 @@ const MiniMap: React.FC<MiniMapProps> = ({ center, routePositions, gpxPositions,
                         </Popup>
                     </Marker>
                 ))}
+
+                {/* Pending Memory Marker */}
+                {pendingMemoryPin && (
+                    <Marker
+                        position={[pendingMemoryPin.lat, pendingMemoryPin.lng]}
+                        icon={L.divIcon({
+                            className: 'custom-div-icon',
+                            html: `<div style="background-color: #f59e0b; border: 3px solid white; border-radius: 50%; width: 16px; height: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); animation: pulse 2s infinite;"></div>`,
+                            iconSize: [16, 16],
+                            iconAnchor: [8, 8],
+                        })}
+                    />
+                )}
             </MapContainer>
         </div>
     );
@@ -158,11 +228,12 @@ interface TripDetailPageProps {
     onUpdateLocation?: (locationId: string, data: any) => Promise<any>;
     onDeleteLocation?: (locationId: string) => Promise<void>;
     onDeleteTrip?: (tripId: string) => Promise<void>;
+    onAddLocation?: (data: Omit<MapLocation, 'id' | 'comments'>) => Promise<any>;
 }
 
 const TripDetailPage: React.FC<TripDetailPageProps> = ({
     trip, locations, author, currentUser, onBack, onLike, onBookmark,
-    isEditable = false, onUpdateTrip, onUpdateLocation, onDeleteLocation, onDeleteTrip
+    isEditable = false, onUpdateTrip, onUpdateLocation, onDeleteLocation, onDeleteTrip, onAddLocation
 }) => {
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -180,6 +251,170 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
     const [editTags, setEditTags] = useState<string[]>(trip.tags || []);
     const [editDistance, setEditDistance] = useState(trip.gpxStats?.distanceKm || 0);
     const [editDays, setEditDays] = useState(trip.gpxStats?.estimatedDays || 0);
+
+    const [routePlanMode, setRoutePlanMode] = useState(false);
+    const [pendingWaypoints, setPendingWaypoints] = useState<({ lat: number, lng: number } | null)[]>([null]);
+    const [pendingRoute, setPendingRoute] = useState<[number, number][] | null>(null);
+    const [routingLoading, setRoutingLoading] = useState(false);
+    const [routingError, setRoutingError] = useState<string | null>(null);
+    const [newRouteName, setNewRouteName] = useState('');
+    const [pendingRouteKm, setPendingRouteKm] = useState(0);
+    const [pendingRouteAscent, setPendingRouteAscent] = useState(0);
+    const [pendingRouteDescent, setPendingRouteDescent] = useState(0);
+    const [pendingRoutePoints, setPendingRoutePoints] = useState<any[]>([]);
+    const [routeDay, setRouteDay] = useState<number | 'all'>('all');
+
+    // Add Memory modal state (per-day)
+    const [addMemoryDay, setAddMemoryDay] = useState<{ dayIndex: number; date: Date } | null>(null);
+    const [memoryTitle, setMemoryTitle] = useState('');
+    const [memoryComment, setMemoryComment] = useState('');
+    const [memoryPhotoPreview, setMemoryPhotoPreview] = useState<string | null>(null);
+    const [memoryPhotoFile, setMemoryPhotoFile] = useState<File | null>(null);
+    const [memoryType, setMemoryType] = useState<MapLocation['type']>('adventure');
+    const [memoryPinCoords, setMemoryPinCoords] = useState<{ lat: number; lng: number } | null>(null);
+    const [isPlacingMemoryPin, setIsPlacingMemoryPin] = useState(false);
+    const [memoryIsCompressing, setMemoryIsCompressing] = useState(false);
+    const [memoryIsGenerating, setMemoryIsGenerating] = useState(false);
+    const [memoryIsSaving, setMemoryIsSaving] = useState(false);
+    const memoryFileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleMapClick = async (lat: number, lng: number) => {
+        if (!routePlanMode) return;
+
+        const lastEl = pendingWaypoints[pendingWaypoints.length - 1];
+        if (lastEl === null) {
+            const newWps = [...pendingWaypoints];
+            newWps[newWps.length - 1] = { lat, lng };
+            if (newWps.length < 8) newWps.push(null);
+            setPendingWaypoints(newWps);
+
+            const validWps = newWps.filter(w => w !== null) as { lat: number, lng: number }[];
+            if (validWps.length >= 2) {
+                setRoutingLoading(true);
+                setRoutingError(null);
+                try {
+                    const apiKey = (import.meta as any).env.VITE_MAPY_API_KEY || '';
+                    const route = await fetchHikingRoute(validWps, apiKey);
+                    setPendingRoute(route.points.map((p: any) => [p.lat, p.lng] as [number, number]));
+                    setPendingRouteKm(route.distanceKm);
+                    setPendingRouteAscent(route.ascent || 0);
+                    setPendingRouteDescent(route.descent || 0);
+                    setPendingRoutePoints(route.points);
+                } catch (err: any) {
+                    console.error(err);
+                    setRoutingError(err.message || 'Failed to calculate route');
+                } finally {
+                    setRoutingLoading(false);
+                }
+            } else {
+                setPendingRoute(null);
+                setPendingRouteKm(0);
+                setPendingRouteAscent(0);
+                setPendingRouteDescent(0);
+                setPendingRoutePoints([]);
+            }
+        }
+    };
+
+    const handleMemoryMapClick = (lat: number, lng: number) => {
+        if (!isPlacingMemoryPin) return;
+        setMemoryPinCoords({ lat, lng });
+        setIsPlacingMemoryPin(false); // Map clicked, exit map-pin mode to show modal
+    };
+
+    const handleSaveRoute = async () => {
+        if (!onUpdateTrip || !pendingRoute || !newRouteName) return;
+        const currentRoutes = trip.hikingRoutes || [];
+        const newRoute = {
+            name: newRouteName,
+            points: pendingRoutePoints,
+            distanceKm: pendingRouteKm,
+            ascent: pendingRouteAscent,
+            descent: pendingRouteDescent,
+            day: routeDay
+        };
+        const updated = await onUpdateTrip(trip.id, { hikingRoutes: [...currentRoutes, newRoute] });
+        if (updated) {
+            setRoutePlanMode(false);
+            setPendingWaypoints([null]);
+            setPendingRoute(null);
+            setNewRouteName('');
+            setPendingRouteKm(0);
+            setPendingRoutePoints([]);
+            setRouteDay('all');
+        }
+    };
+
+    const handleDeleteRoute = async (indexToDelete: number) => {
+        if (!onUpdateTrip || !trip.hikingRoutes) return;
+        const confirmDelete = window.confirm("Are you sure you want to delete this route?");
+        if (!confirmDelete) return;
+        const updatedRoutes = trip.hikingRoutes.filter((_, i) => i !== indexToDelete);
+        await onUpdateTrip(trip.id, { hikingRoutes: updatedRoutes });
+    };
+
+    const openAddMemory = (dayIndex: number, date: Date) => {
+        setAddMemoryDay({ dayIndex, date });
+        setMemoryTitle('');
+        setMemoryComment('');
+        setMemoryPhotoPreview(null);
+        setMemoryPhotoFile(null);
+        setMemoryType('adventure');
+        setMemoryPinCoords(null);
+        setIsPlacingMemoryPin(true); // Always start by placing the pin on the map
+    };
+
+    const handleMemoryPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files?.[0]) return;
+        const file = e.target.files[0];
+        setMemoryPhotoFile(file);
+        setMemoryIsCompressing(true);
+        try {
+            const compressed = await compressImage(file);
+            setMemoryPhotoPreview(compressed);
+        } catch { alert('Could not process image.'); }
+        finally { setMemoryIsCompressing(false); }
+    };
+
+    const handleMemoryAiCaption = async () => {
+        if (!memoryPhotoFile) return;
+        setMemoryIsGenerating(true);
+        try {
+            const caption = await generateFunCaption(memoryPhotoFile, memoryTitle);
+            setMemoryComment(caption);
+        } catch { /* silent */ }
+        finally { setMemoryIsGenerating(false); }
+    };
+
+    const handleSaveMemory = async () => {
+        if (!onAddLocation || !addMemoryDay || !memoryTitle || !memoryPhotoPreview) return;
+        setMemoryIsSaving(true);
+        try {
+            // Set timestamp to that day at noon, or now if today
+            const targetDate = new Date(addMemoryDay.date);
+            const now = new Date();
+            if (targetDate.toDateString() === now.toDateString()) {
+                targetDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+            } else {
+                targetDate.setHours(12, 0, 0, 0);
+            }
+            // Use pinned coords, fallback to map center
+            const coords = memoryPinCoords || mapCenter || { lat: 0, lng: 0 };
+            await onAddLocation({
+                tripId: trip.id,
+                userId: author.id,
+                coords,
+                title: memoryTitle,
+                comment: memoryComment,
+                photoUrl: memoryPhotoPreview,
+                type: memoryType,
+                timestamp: targetDate.getTime(),
+            });
+            setAddMemoryDay(null);
+        } catch { /* silent */ }
+        finally { setMemoryIsSaving(false); }
+    };
+
 
     const [draggedLocationId, setDraggedLocationId] = useState<string | null>(null);
 
@@ -684,7 +919,7 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
                             </div>
                         ) : (
                             <div className="relative">
-                                <p className="text-white/80 text-lg md:text-xl leading-relaxed font-light font-serif">
+                                <p className="text-white/80 text-lg md:text-xl leading-relaxed font-light font-sans">
                                     {trip.description}
                                 </p>
                                 {isEditable && (
@@ -712,6 +947,32 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
                         </div>
 
                         <div className="space-y-12">
+                            {/* Render 'all' days hiking routes top-level if any */}
+                            {Array.isArray(trip.hikingRoutes) && trip.hikingRoutes.some(r => r.day === 'all' || r.day === undefined) && (
+                                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8">
+                                    <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Route size={16} className="text-pink-400" /> Overall Trip Routes</h3>
+                                    <div className="space-y-4">
+                                        {trip.hikingRoutes.map((route, idx) => ({ route, idx })).filter(r => r.route.day === 'all' || r.route.day === undefined).map(({ route, idx }) => (
+                                            <div key={idx} className="flex justify-between items-center bg-black/40 p-4 rounded-xl border border-white/5">
+                                                <div>
+                                                    <span className="font-bold text-white text-base block">{route.name}</span>
+                                                    <div className="flex gap-4 text-xs font-bold text-white/50 mt-1">
+                                                        <span>{route.distanceKm} km</span>
+                                                        <span className="text-green-400">+{route.ascent}m</span>
+                                                        <span className="text-red-400">-{route.descent}m</span>
+                                                    </div>
+                                                </div>
+                                                {isEditable && (
+                                                    <button onClick={() => handleDeleteRoute(idx)} className="p-2 bg-red-500/10 text-red-500 rounded-full hover:bg-red-500 hover:text-white transition">
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {days.map((day) => {
                                 const dayLocations = locationsByDay[day.index] || [];
                                 return (
@@ -765,7 +1026,7 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
                                                                     <div className="flex items-center gap-3 mb-2">
                                                                         <h4 className="text-lg font-bold text-white truncate">{loc.title}</h4>
                                                                     </div>
-                                                                    <p className="text-base text-white/60 font-light line-clamp-2 md:line-clamp-3 leading-relaxed">"{loc.comment}"</p>
+                                                                    <p className="text-base text-white/60 font-light line-clamp-2 md:line-clamp-3 leading-relaxed">{loc.comment}</p>
                                                                 </div>
 
                                                                 {isEditable && (
@@ -781,6 +1042,30 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
                                             })}
                                         </div>
 
+                                        {/* Day Hiking Routes */}
+                                        {Array.isArray(trip.hikingRoutes) && trip.hikingRoutes.some(r => r.day === day.index) && (
+                                            <div className="mt-6 space-y-3">
+                                                <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest flex items-center gap-2"><Route size={12} /> Day Trails</h4>
+                                                {trip.hikingRoutes.map((route, idx) => ({ route, idx })).filter(r => r.route.day === day.index).map(({ route, idx }) => (
+                                                    <div key={idx} className="flex justify-between items-center bg-white/5 p-4 rounded-xl border border-white/5 group">
+                                                        <div>
+                                                            <span className="font-bold text-white text-sm block">{route.name}</span>
+                                                            <div className="flex gap-3 text-xs font-bold text-white/50 mt-1">
+                                                                <span>{route.distanceKm} km</span>
+                                                                <span className="text-green-400">+{route.ascent}m</span>
+                                                                <span className="text-red-400">-{route.descent}m</span>
+                                                            </div>
+                                                        </div>
+                                                        {isEditable && (
+                                                            <button onClick={() => handleDeleteRoute(idx)} className="p-2 opacity-0 group-hover:opacity-100 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition">
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         {/* Day Comments / Log */}
                                         <div className="mt-6">
                                             {isEditable ? (
@@ -795,12 +1080,25 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
                                                 </div>
                                             ) : (
                                                 (trip.dayComments?.[day.index]) && (
-                                                    <div className="pl-6 border-l-2 border-white/20 text-lg text-white/70 font-light font-serif leading-relaxed italic">
-                                                        "{trip.dayComments[day.index]}"
+                                                    <div className="pl-6 border-l-2 border-white/20 text-lg text-white/70 font-light font-sans leading-relaxed">
+                                                        {trip.dayComments[day.index]}
                                                     </div>
                                                 )
                                             )}
                                         </div>
+
+                                        {/* Add Memory button */}
+                                        {isEditable && onAddLocation && (
+                                            <button
+                                                onClick={() => openAddMemory(day.index, day.date)}
+                                                className="mt-4 flex items-center gap-2 text-xs font-bold text-white/30 hover:text-white transition-colors group/add"
+                                            >
+                                                <span className="w-6 h-6 rounded-full border border-white/20 flex items-center justify-center group-hover/add:border-white group-hover/add:bg-white/10 transition">
+                                                    <Plus size={12} />
+                                                </span>
+                                                Add Memory
+                                            </button>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -868,21 +1166,110 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
                 {/* Right Column: Sticky Map */}
                 <div className="hidden lg:block lg:col-span-6 xl:col-span-7">
                     <div className="sticky top-6 h-[calc(100vh-48px)] rounded-[2.5rem] overflow-hidden border border-white/10 shadow-2xl">
-                        {(tripLocations.length > 0 || gpxPositions.length > 0) && mapCenter ? (
-                            <MiniMap
-                                center={mapCenter}
-                                routePositions={routePositions}
-                                gpxPositions={gpxPositions}
-                                tripLocations={tripLocations}
-                                authorColor={author.color || "#000"}
-                            />
-                        ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center bg-white/5">
-                                <MapIcon size={48} className="text-white/20 mb-4" />
-                                <p className="text-white/40 text-sm">No map data available.</p>
+                        <MiniMap
+                            center={mapCenter || { lat: 20, lng: 10 }}
+                            routePositions={routePositions}
+                            gpxPositions={gpxPositions}
+                            tripLocations={tripLocations}
+                            authorColor={author.color || "#000"}
+                            hikingRoutes={trip.hikingRoutes}
+                            routePlanMode={routePlanMode}
+                            pendingWaypoints={pendingWaypoints}
+                            pendingRoute={pendingRoute || undefined}
+                            onPlanMapClick={handleMapClick}
+                            pendingMemoryPin={memoryPinCoords}
+                            onMemoryMapClick={handleMemoryMapClick}
+                        />
+
+                        {/* Map Pinning Prompt */}
+                        {isPlacingMemoryPin && (
+                            <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-[3000] bg-[#f59e0b]/90 backdrop-blur text-white px-5 py-2.5 rounded-full text-xs font-bold border border-white/20 shadow-2xl flex items-center gap-4 animate-fade-in-down">
+                                <div className="flex items-center gap-2 pointer-events-none">
+                                    <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.8)]" />
+                                    Tap map to place your memory
+                                </div>
+                                <button
+                                    onClick={() => { setAddMemoryDay(null); setIsPlacingMemoryPin(false); }}
+                                    className="bg-black/20 hover:bg-black/40 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest transition pointer-events-auto"
+                                >
+                                    Cancel
+                                </button>
                             </div>
                         )}
 
+                        {/* Planner overlay on map */}
+                        {isEditable && (
+                            <div className="absolute bottom-6 left-6 z-[1000]">
+                                {!routePlanMode ? (
+                                    <button
+                                        onClick={() => setRoutePlanMode(true)}
+                                        className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-white/90 text-black font-bold uppercase tracking-widest text-xs rounded-full shadow-2xl transition"
+                                    >
+                                        <Route size={16} /> Plan Route
+                                    </button>
+                                ) : (
+                                    <div className="bg-black/90 backdrop-blur-xl border border-white/20 p-6 rounded-3xl shadow-2xl w-80 space-y-4">
+                                        <h4 className="text-white font-bold mb-2">Plan a Trail</h4>
+                                        <p className="text-xs text-white/50">Click on the map to add waypoints (up to 8).</p>
+
+                                        <input
+                                            type="text"
+                                            placeholder="Trail Name"
+                                            value={newRouteName}
+                                            onChange={e => setNewRouteName(e.target.value)}
+                                            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-white transition-colors"
+                                        />
+
+                                        <div className="flex flex-col gap-2">
+                                            <select
+                                                value={routeDay === 'all' ? 'all' : routeDay}
+                                                onChange={e => setRouteDay(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                                                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-sm text-white focus:outline-none appearance-none cursor-pointer"
+                                            >
+                                                <option value="all" className="text-black">All Days</option>
+                                                {days.map(d => (
+                                                    <option key={d.index} value={d.index} className="text-black">{d.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {pendingWaypoints.length > 1 && (
+                                            <div className="flex justify-between text-xs text-white/70 bg-white/5 p-3 rounded-xl border border-white/10">
+                                                <span>{pendingRouteKm} km</span>
+                                                <span>+{pendingRouteAscent}m</span>
+                                                <span>-{pendingRouteDescent}m</span>
+                                            </div>
+                                        )}
+
+                                        {routingError && <p className="text-xs text-red-400">{routingError}</p>}
+                                        {routingLoading && <p className="text-xs text-white/50">Routing...</p>}
+
+                                        <div className="flex gap-2 pt-2">
+                                            <button
+                                                onClick={() => {
+                                                    setRoutePlanMode(false);
+                                                    setPendingWaypoints([null]);
+                                                    setPendingRoute(null);
+                                                    setPendingRouteKm(0);
+                                                    setPendingRoutePoints([]);
+                                                    setRouteDay('all');
+                                                }}
+                                                className="flex-1 py-2 rounded-xl border border-white/20 text-white/70 hover:bg-white/10 hover:text-white transition text-xs font-bold"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={handleSaveRoute}
+                                                disabled={!newRouteName || !pendingRoute || routingLoading}
+                                                className="flex-1 py-2 rounded-xl bg-white text-black disabled:opacity-50 hover:bg-white/90 transition text-xs font-bold"
+                                            >
+                                                Save Route
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         {/* Weather overlay on map */}
                         <div className="absolute top-6 right-6 z-[1000] drop-shadow-2xl">
                             {mapCenter && <WeatherWidget coords={mapCenter} />}
@@ -900,6 +1287,112 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
                     onClose={() => setLightboxIndex(null)}
                     onNavigate={setLightboxIndex}
                 />
+            )}
+
+            {/* Add Memory Modal */}
+            {addMemoryDay && !isPlacingMemoryPin && (
+                <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+                    <div className="bg-[#111] border border-white/10 rounded-3xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] shadow-2xl">
+                        {/* Header */}
+                        <div className="flex justify-between items-center px-6 py-5 border-b border-white/10">
+                            <div>
+                                <h2 className="text-lg font-black text-white">Add Memory</h2>
+                                <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">
+                                    {days.find(d => d.index === addMemoryDay.dayIndex)?.label} · {addMemoryDay.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                </p>
+                            </div>
+                            <button onClick={() => setAddMemoryDay(null)} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition text-white">
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        <div className="overflow-y-auto flex-1 p-6 space-y-5">
+                            {/* Photo Upload */}
+                            <div
+                                onClick={() => !memoryIsCompressing && memoryFileInputRef.current?.click()}
+                                className={`relative w-full h-48 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden
+                                    ${memoryPhotoPreview ? 'border-transparent' : 'border-white/20 hover:border-white/40 bg-white/5'}`}
+                            >
+                                {memoryIsCompressing ? (
+                                    <div className="flex flex-col items-center text-white/50">
+                                        <Loader2 className="animate-spin mb-2" size={24} />
+                                        <span className="text-xs">Optimizing photo...</span>
+                                    </div>
+                                ) : memoryPhotoPreview ? (
+                                    <img src={memoryPhotoPreview} alt="Preview" className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="text-center text-white/40">
+                                        <Image className="mx-auto mb-2" size={32} />
+                                        <p className="text-sm font-medium">Tap to upload photo</p>
+                                    </div>
+                                )}
+                                <input type="file" ref={memoryFileInputRef} className="hidden" accept="image/*" onChange={handleMemoryPhotoChange} />
+                            </div>
+
+                            {/* Title */}
+                            <input
+                                type="text"
+                                value={memoryTitle}
+                                onChange={e => setMemoryTitle(e.target.value)}
+                                placeholder="Location name..."
+                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-white/40 transition placeholder:text-white/30"
+                            />
+
+                            {/* Type */}
+                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                                {LOCATION_TYPES.map(t => (
+                                    <button
+                                        key={t.id}
+                                        onClick={() => setMemoryType(t.id as MapLocation['type'])}
+                                        className={`flex-shrink-0 flex items-center px-3 py-1.5 rounded-full text-xs font-bold transition border
+                                            ${memoryType === t.id ? 'bg-white text-black border-transparent' : 'bg-white/5 text-white/50 border-white/10 hover:bg-white/10 hover:text-white'}`}
+                                    >
+                                        <span className="mr-1">{t.icon}</span>{t.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Comment */}
+                            <div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-xs font-bold text-white/50 uppercase tracking-widest">Experience</span>
+                                    <button
+                                        onClick={handleMemoryAiCaption}
+                                        disabled={!memoryPhotoFile || memoryIsGenerating}
+                                        className="text-xs flex items-center gap-1 text-purple-400 hover:text-purple-300 font-bold disabled:opacity-40 transition"
+                                    >
+                                        {memoryIsGenerating ? <Loader2 size={11} className="animate-spin" /> : '✦'}
+                                        {memoryIsGenerating ? 'Writing...' : 'AI Caption'}
+                                    </button>
+                                </div>
+                                <textarea
+                                    value={memoryComment}
+                                    onChange={e => setMemoryComment(e.target.value)}
+                                    placeholder="What happened here..."
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white/80 text-sm focus:outline-none focus:border-white/40 transition resize-none h-24 placeholder:text-white/20"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-white/10 flex gap-3">
+                            <button
+                                onClick={() => setAddMemoryDay(null)}
+                                className="flex-1 py-3 rounded-xl border border-white/20 text-white/60 hover:bg-white/5 hover:text-white transition font-bold text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveMemory}
+                                disabled={!memoryTitle || !memoryPhotoPreview || memoryIsCompressing || memoryIsSaving}
+                                className="flex-1 py-3 rounded-xl bg-white text-black font-bold text-sm hover:bg-white/90 disabled:opacity-40 transition flex items-center justify-center gap-2"
+                            >
+                                {memoryIsSaving ? <Loader2 size={16} className="animate-spin" /> : null}
+                                {memoryIsSaving ? 'Saving...' : 'Pin Memory'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

@@ -67,7 +67,7 @@ const ExploreFeed: React.FC<ExploreFeedProps> = ({ trips, locations, users, curr
           className="pointer-events-auto"
         >
           <h1 className="text-3xl font-bold tracking-tight mb-1">Explore</h1>
-          <p className="text-white/40 text-sm font-medium">Discover cinematic journeys.</p>
+          <p className="text-white/40 text-sm font-medium">Discover different journeys.</p>
         </motion.div>
 
         <motion.div
@@ -78,7 +78,7 @@ const ExploreFeed: React.FC<ExploreFeedProps> = ({ trips, locations, users, curr
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/30 group-focus-within:text-white transition-colors" size={18} />
           <input
             type="text"
-            placeholder="Search horizons..."
+            placeholder="Search Journeys..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-full focus:bg-white/10 focus:border-white/20 focus:outline-none text-white placeholder-white/30 transition-all backdrop-blur-md text-sm"
@@ -94,7 +94,7 @@ const ExploreFeed: React.FC<ExploreFeedProps> = ({ trips, locations, users, curr
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/30" size={18} />
           <input
             type="text"
-            placeholder="Search horizons..."
+            placeholder="Search Journeys..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-full focus:bg-white/10 focus:outline-none text-white placeholder-white/30 backdrop-blur-md text-sm"
@@ -240,7 +240,7 @@ const ExploreFeed: React.FC<ExploreFeedProps> = ({ trips, locations, users, curr
                     <div className="mt-4 flex items-center gap-4 text-white/80 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">
                       <div className="flex items-center gap-1.5">
                         <MapPin size={14} className="text-white" />
-                        <span className="text-[10px] font-bold uppercase tracking-widest">{tripPins.length} stops</span>
+                        <span className="text-[10px] font-bold uppercase tracking-widest">{tripPins.length} pins</span>
                       </div>
                       {trip.gpxStats && (
                         <div className="flex items-center gap-1.5">

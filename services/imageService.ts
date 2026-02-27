@@ -1,6 +1,6 @@
 
 // Utility to compress images before storage to avoid LocalStorage 5MB limit
-export const compressImage = async (file: File, maxWidth = 1600, quality = 0.85): Promise<string> => {
+export const compressImage = async (file: File, maxWidth = 3000, quality = 0.92): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);

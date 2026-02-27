@@ -134,7 +134,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             </h1>
 
             <p className="text-lg text-white/70 font-light leading-relaxed max-w-sm">
-              The premium social journal for modern explorers. Map your memories with pixel-perfect precision.
+              The social journal for passionate explorers. Map your memories with pixel-perfect precision.
             </p>
           </motion.div>
 
@@ -148,7 +148,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             <form onSubmit={handleFormSubmit} className="space-y-4">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-semibold tracking-tight">
-                  {isRegistering ? 'Join the journey' : 'Welcome back'}
+                  {isRegistering ? 'Start your journey' : 'Welcome back'}
                 </h2>
               </div>
 
@@ -223,7 +223,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                 {isSubmitting ? (
                   <Loader2 size={20} className="animate-spin" />
                 ) : (
-                  <>{isRegistering ? 'Start Exploring' : 'Enter'} <ArrowRight size={20} strokeWidth={1.5} /></>
+                  <>{isRegistering ? 'Register' : 'Log in'} <ArrowRight size={20} strokeWidth={1.5} /></>
                 )}
               </motion.button>
             </form>
@@ -233,7 +233,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                 onClick={() => { setIsRegistering(!isRegistering); setError(''); setSuccessMessage(''); setFormData({ username: '', email: '', password: '' }); }}
                 className="text-sm text-white/50 hover:text-white transition-colors"
               >
-                {isRegistering ? 'Already have an account? Log in' : 'New to TrailThread? Request Access'}
+                {isRegistering ? 'Already have an account? Log in' : 'New to TrailThread? Register now'}
               </button>
             </div>
           </motion.div>
