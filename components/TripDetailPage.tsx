@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Trip, MapLocation, User, Coordinates } from '../types';
 import { DIFFICULTY_LEVELS, LOCATION_TYPES } from '../constants';
 import { computeTripStats, getRouteCenter } from '../utils/tripStats';
-import { ArrowLeft, Heart, MapPin, Calendar, Mountain, Route, Camera, Bookmark, Edit2, Check, X, Trash2, Upload, FileUp, Globe, Plus, Minus, Tag, Map as MapIcon, Loader2, Image } from 'lucide-react';
+import { ArrowLeft, Heart, MapPin, Calendar, Mountain, Route, Camera, Bookmark, Edit2, Check, X, Trash2, Upload, FileUp, Globe, Plus, Minus, Tag, Map as MapIcon, Loader2, Image, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -89,6 +89,135 @@ const AltitudeProfileWidget = ({ gpxData }: { gpxData: { lat: number; lng: numbe
         </div>
     );
 };
+
+// ── Polaroid stacked photo gallery ────────────────────────────────────────────
+interface PolaroidGalleryProps {
+    locations: MapLocation[];
+    onPhotoClick: (globalIndex: number) => void;
+    isEditable?: boolean;
+    onEditLocation?: (loc: MapLocation) => void;
+    onDeleteLocation?: (id: string) => void;
+}
+
+const STACK_ROTATIONS = [-14, -8, 5, 11]; // degrees for photos behind the active one
+
+const PolaroidGallery: React.FC<PolaroidGalleryProps> = ({ locations, onPhotoClick, isEditable, onEditLocation, onDeleteLocation }) => {
+    const [active, setActive] = useState(0);
+    const count = locations.length;
+    if (count === 0) return null;
+
+    const prev = () => setActive(i => (i - 1 + count) % count);
+    const next = () => setActive(i => (i + 1) % count);
+
+    const loc = locations[active];
+
+    // Compute stacked cards: up to 3 "back" photos arranged as fanned polaroids
+    const backCards = locations
+        .filter((_, i) => i !== active)
+        .slice(0, 4)
+        .map((l, i) => ({ l, rot: STACK_ROTATIONS[i] ?? (i % 2 === 0 ? -12 : 10) }));
+
+    return (
+        <div className="rounded-2xl overflow-hidden bg-[#111]/80 border border-white/8 backdrop-blur">
+            {/* Label */}
+            <div className="px-4 pt-4 pb-1">
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white/30 flex items-center gap-1.5">
+                    <Camera size={9} /> Photo Gallery
+                </span>
+            </div>
+
+            {/* Photo stack area */}
+            <div className="relative flex items-center justify-center" style={{ height: 260 }}>
+                {/* Fanned back cards */}
+                {backCards.map(({ l, rot }, i) => (
+                    <div
+                        key={l.id}
+                        className="absolute"
+                        style={{
+                            transform: `rotate(${rot}deg) translateY(4px)`,
+                            zIndex: i,
+                            transformOrigin: 'bottom center',
+                        }}
+                    >
+                        <div className="bg-white p-2 pb-6 shadow-2xl" style={{ width: 160, height: 180 }}>
+                            <img src={l.photoUrl} alt={l.title} className="w-full h-full object-cover" />
+                        </div>
+                    </div>
+                ))}
+
+                {/* Active / front card — clickable to open lightbox */}
+                <div
+                    className="relative cursor-pointer select-none"
+                    style={{ zIndex: 10, transform: 'rotate(-1deg)' }}
+                    onClick={() => onPhotoClick(active)}
+                >
+                    <div className="bg-white p-2.5 pb-8 shadow-2xl transition-transform duration-200 hover:scale-[1.02]" style={{ width: 200, height: 230 }}>
+                        <img src={loc.photoUrl} alt={loc.title} className="w-full h-full object-cover" />
+                    </div>
+                    {/* Edit/delete buttons on active card for editable mode */}
+                    {isEditable && (
+                        <div className="absolute top-4 right-4 flex gap-1 z-20">
+                            {onEditLocation && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onEditLocation(loc); }}
+                                    className="w-6 h-6 flex items-center justify-center bg-white text-black rounded-full shadow-lg hover:scale-110 transition"
+                                >
+                                    <Edit2 size={10} />
+                                </button>
+                            )}
+                            {onDeleteLocation && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onDeleteLocation(loc.id); }}
+                                    className="w-6 h-6 flex items-center justify-center bg-red-500 text-white rounded-full shadow-lg hover:scale-110 transition"
+                                >
+                                    <Trash2 size={10} />
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Prev arrow */}
+                {count > 1 && (
+                    <button
+                        onClick={prev}
+                        className="absolute left-3 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/70 border border-white/10 text-white transition"
+                    >
+                        <ChevronLeft size={16} />
+                    </button>
+                )}
+
+                {/* Next arrow */}
+                {count > 1 && (
+                    <button
+                        onClick={next}
+                        className="absolute right-3 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/70 border border-white/10 text-white transition"
+                    >
+                        <ChevronRight size={16} />
+                    </button>
+                )}
+            </div>
+
+            {/* Title + dots */}
+            <div className="flex flex-col items-center gap-2 pb-5 pt-1">
+                <span className="text-white font-bold text-sm tracking-wide">{loc.title}</span>
+                {count > 1 && (
+                    <div className="flex gap-1.5">
+                        {locations.map((_, i) => (
+                            <button
+                                key={i}
+                                onClick={() => setActive(i)}
+                                className={`rounded-full transition-all duration-200 ${i === active ? 'w-4 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/30 hover:bg-white/60'
+                                    }`}
+                            />
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+// ──────────────────────────────────────────────────────────────────────────────
 
 interface MiniMapProps {
     center: { lat: number; lng: number };
@@ -991,56 +1120,31 @@ const TripDetailPage: React.FC<TripDetailPageProps> = ({
                                             <span>{day.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                                         </h3>
 
-                                        <div className="space-y-6">
-                                            {dayLocations.map((loc, idx) => {
-                                                const typeDef = LOCATION_TYPES.find(t => t.id === loc.type);
-                                                const isEditingThis = editingLocationId === loc.id;
-                                                const isBeingDragged = draggedLocationId === loc.id;
+                                        {/* Edit form – shown when editing a specific location */}
+                                        {editingLocationId && dayLocations.some(l => l.id === editingLocationId) && (
+                                            <div className="bg-white/5 backdrop-blur rounded-2xl border border-white/20 p-6 space-y-4 mb-4">
+                                                <input value={editLocTitle} onChange={e => setEditLocTitle(e.target.value)} className="w-full font-bold text-xl text-white bg-transparent border-b border-white/20 focus:outline-none focus:border-white pb-2" placeholder="Waypoint Name" />
+                                                <textarea value={editLocComment} onChange={e => setEditLocComment(e.target.value)} className="w-full text-base text-white/80 bg-black/20 border border-white/10 rounded-xl p-4 focus:ring-1 focus:ring-white focus:outline-none resize-none h-24" placeholder="Memory details..." />
+                                                <select value={editLocType} onChange={e => setEditLocType(e.target.value)} className="text-xs border border-white/20 bg-black text-white rounded-lg px-3 py-2 focus:ring-1 focus:ring-white focus:outline-none appearance-none">
+                                                    {LOCATION_TYPES.map(t => (<option key={t.id} value={t.id}>{t.label}</option>))}
+                                                </select>
+                                                <div className="flex gap-3 justify-end pt-2">
+                                                    <button onClick={() => setEditingLocationId(null)} className="px-4 py-2 text-xs font-bold text-white/50 hover:bg-white/10 rounded-lg transition">Cancel</button>
+                                                    <button onClick={saveLocationEdit} className="px-4 py-2 text-xs bg-white text-black rounded-lg hover:scale-105 transition font-bold">Save</button>
+                                                </div>
+                                            </div>
+                                        )}
 
-                                                return (
-                                                    <div
-                                                        key={loc.id}
-                                                        className={`relative transition-all duration-300 ${isBeingDragged ? 'opacity-30 scale-95' : 'opacity-100'}`}
-                                                        draggable={isEditable}
-                                                        onDragStart={(e) => handleDragStart(e, loc.id)}
-                                                    >
-                                                        {isEditingThis ? (
-                                                            <div className="bg-white/5 backdrop-blur rounded-2xl border border-white/20 p-6 space-y-4">
-                                                                <input value={editLocTitle} onChange={e => setEditLocTitle(e.target.value)} className="w-full font-bold text-xl text-white bg-transparent border-b border-white/20 focus:outline-none focus:border-white pb-2" placeholder="Waypoint Name" />
-                                                                <textarea value={editLocComment} onChange={e => setEditLocComment(e.target.value)} className="w-full text-base text-white/80 bg-black/20 border border-white/10 rounded-xl p-4 focus:ring-1 focus:ring-white focus:outline-none resize-none h-24" placeholder="Memory details..." />
-                                                                <select value={editLocType} onChange={e => setEditLocType(e.target.value)} className="text-xs border border-white/20 bg-black text-white rounded-lg px-3 py-2 focus:ring-1 focus:ring-white focus:outline-none appearance-none">
-                                                                    {LOCATION_TYPES.map(t => (<option key={t.id} value={t.id}>{t.label}</option>))}
-                                                                </select>
-                                                                <div className="flex gap-3 justify-end pt-2">
-                                                                    <button onClick={() => setEditingLocationId(null)} className="px-4 py-2 text-xs font-bold text-white/50 hover:bg-white/10 rounded-lg transition">Cancel</button>
-                                                                    <button onClick={saveLocationEdit} className="px-4 py-2 text-xs bg-white text-black rounded-lg hover:scale-105 transition font-bold">Save</button>
-                                                                </div>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="group/item flex gap-6 cursor-pointer" onClick={() => setLightboxIndex(locationIndexOf(loc))}>
-                                                                <div className="w-24 h-24 md:w-32 md:h-32 rounded-2xl overflow-hidden flex-shrink-0 bg-white/5 border border-white/10 relative">
-                                                                    <img src={loc.photoUrl} alt={loc.title} className="w-full h-full object-cover group-hover/item:scale-110 transition-transform duration-[2s] ease-out" />
-                                                                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/item:opacity-100 transition-opacity" />
-                                                                </div>
-                                                                <div className="flex-1 min-w-0 pt-2">
-                                                                    <div className="flex items-center gap-3 mb-2">
-                                                                        <h4 className="text-lg font-bold text-white truncate">{loc.title}</h4>
-                                                                    </div>
-                                                                    <p className="text-base text-white/60 font-light line-clamp-2 md:line-clamp-3 leading-relaxed">{loc.comment}</p>
-                                                                </div>
-
-                                                                {isEditable && (
-                                                                    <div className="absolute -left-4 top-4 flex flex-col gap-2 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                                                                        <button onClick={(e) => { e.stopPropagation(); startEditingLocation(loc); }} className="p-2 bg-white text-black rounded-full hover:scale-110 transition shadow-xl"><Edit2 size={12} /></button>
-                                                                        <button onClick={(e) => { e.stopPropagation(); onDeleteLocation && onDeleteLocation(loc.id); }} className="p-2 bg-red-500 text-white rounded-full hover:scale-110 transition shadow-xl"><Trash2 size={12} /></button>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
+                                        {/* Polaroid stacked gallery */}
+                                        {dayLocations.length > 0 && (
+                                            <PolaroidGallery
+                                                locations={dayLocations}
+                                                onPhotoClick={(i) => setLightboxIndex(locationIndexOf(dayLocations[i]))}
+                                                isEditable={isEditable}
+                                                onEditLocation={isEditable ? startEditingLocation : undefined}
+                                                onDeleteLocation={isEditable && onDeleteLocation ? (id) => onDeleteLocation(id) : undefined}
+                                            />
+                                        )}
 
                                         {/* Day Hiking Routes */}
                                         {Array.isArray(trip.hikingRoutes) && trip.hikingRoutes.some(r => r.day === day.index) && (

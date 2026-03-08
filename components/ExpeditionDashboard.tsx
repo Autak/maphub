@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Polyline, Marker, useMap } from 'react-leaflet
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Trip, MapLocation, User } from '../types';
-import { Plus, Map as MapIcon, Camera, Route, MapPin } from 'lucide-react';
+import { Plus, Map as MapIcon, Camera, Route, MapPin, Bookmark } from 'lucide-react';
 
 // Fix Leaflet marker icon
 if (typeof window !== 'undefined') {
@@ -100,6 +100,21 @@ const ExpeditionDashboard: React.FC<ExpeditionDashboardProps> = ({
         }),
         [myTrips, myLocations]
     );
+
+    // Saved trips: bookmarked trips from OTHER users
+    const savedTripData = useMemo(() => {
+        const bookmarks = currentUser.bookmarks || [];
+        return bookmarks
+            .map(id => trips.find(t => t.id === id))
+            .filter((t): t is Trip => !!t && t.userId !== currentUser.id)
+            .map(trip => {
+                const tripLocs = locations
+                    .filter(l => l.tripId === trip.id)
+                    .sort((a, b) => a.timestamp - b.timestamp);
+                const coverPhoto = trip.coverPhotoUrl || (tripLocs[0]?.photoUrl) || null;
+                return { trip, coverPhoto, tripLocs };
+            });
+    }, [currentUser.bookmarks, trips, locations, currentUser.id]);
 
     // Fetch countries for all trips (using first location coordinate)
     useEffect(() => {
@@ -348,6 +363,64 @@ const ExpeditionDashboard: React.FC<ExpeditionDashboardProps> = ({
                                 </div>
                             );
                         })
+                    )}
+
+                    {/* ── Saved Trips section ─────────────────────── */}
+                    {savedTripData.length > 0 && (
+                        <>
+                            <div className="flex items-center gap-2 pt-4 pb-1 px-1">
+                                <Bookmark size={10} className="text-white/30" />
+                                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/30">Saved Trips</p>
+                                <div className="h-px flex-1 bg-white/10" />
+                            </div>
+                            {savedTripData.map(sd => (
+                                <div
+                                    key={`saved-${sd.trip.id}`}
+                                    onClick={() => onViewTrip(sd.trip.id)}
+                                    className="group flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all duration-300 bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20"
+                                >
+                                    {/* Cover photo */}
+                                    <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-white/10 relative">
+                                        {sd.coverPhoto ? (
+                                            <img
+                                                src={sd.coverPhoto}
+                                                alt={sd.trip.title}
+                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-white/10">
+                                                <Camera size={16} className="text-white/30" />
+                                            </div>
+                                        )}
+                                        {/* Bookmark badge */}
+                                        <div className="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-white/90 flex items-center justify-center">
+                                            <Bookmark size={8} className="text-black" fill="currentColor" />
+                                        </div>
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-white font-bold text-sm truncate leading-tight">{sd.trip.title}</p>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                            {sd.trip.location && (
+                                                <span className="flex items-center gap-0.5 text-white/50 text-[10px] font-medium">
+                                                    <MapPin size={8} className="flex-shrink-0" />
+                                                    {sd.trip.location.split(',').pop()?.trim()}
+                                                </span>
+                                            )}
+                                            {!sd.trip.location && (
+                                                <span className="text-white/40 text-[10px] font-medium">
+                                                    {new Date(sd.trip.startDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Arrow */}
+                                    <svg className="w-3.5 h-3.5 text-white/20 flex-shrink-0 group-hover:text-white/60 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                </div>
+                            ))}
+                        </>
                     )}
                 </div>
             </div>
